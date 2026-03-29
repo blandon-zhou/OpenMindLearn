@@ -58,22 +58,53 @@ export interface FileIODeps {
   setInitialImages: (v: any[]) => void
 }
 
+export interface LocalDraftPayload {
+  fileName: string
+  filePath: string | null
+  nodes: Node[]
+  edges: any[]
+  regions: Region[]
+  initialInput?: string
+  initialImages?: NodeImage[]
+  initialGenerating?: boolean
+}
+
+interface GraphLoadLikeData {
+  nodes: Node[]
+  edges?: any[]
+  regions?: Region[]
+  name?: string
+}
+
 export function useCanvasFileIO(deps: FileIODeps) {
   const { fileName, currentFilePath, setCurrentFilePath, setDirty, loadGraph, clearGraph } = useGraphStore()
   const { showToast } = useToastStore()
 
-  const applyLoadedGraph = useCallback(async (base64: string, openedFilePath: string | null) => {
-    const result = await loadFile(base64)
-    if (!result?.nodes || !Array.isArray(result.nodes)) {
-      throw new Error(result?.error || 'Invalid load response')
+  const applyGraphData = useCallback((graphData: GraphLoadLikeData, openedFilePath: string | null, options?: {
+    dirty?: boolean
+    toastKey?: string
+  }) => {
+    if (!graphData?.nodes || !Array.isArray(graphData.nodes)) {
+      throw new Error('Invalid graph data')
     }
 
-    const loadedNodes: Node[] = (result.nodes || []).map((node: Node) => normalizeNodeForRuntime(node))
-    const loadedRegions = normalizeRegionsWithNodeFallback(result.regions, loadedNodes)
+    const loadedNodes: Node[] = graphData.nodes.map((node: Node) => normalizeNodeForRuntime(node))
+    const loadedRegions = normalizeRegionsWithNodeFallback(graphData.regions, loadedNodes)
 
-    const graphName = typeof result.name === 'string' && result.name.trim()
-      ? result.name.trim()
+    const graphName = typeof graphData.name === 'string' && graphData.name.trim()
+      ? graphData.name.trim()
       : getFileNameFromPath(openedFilePath) || 'Untitled'
+
+    const loadedEdges = (graphData.edges || []).map((edge: any) => {
+      if (edge.style) return edge
+      const childNode = loadedNodes.find((node) => node.id === edge.target)
+      return {
+        ...edge,
+        style: childNode?.expansionColor
+          ? { stroke: childNode.expansionColor, strokeWidth: 2 }
+          : undefined
+      }
+    })
 
     deps.skipDirtyFlagRef.current = true
     loadGraph({ nodes: loadedNodes, name: graphName, regions: loadedRegions }, openedFilePath)
@@ -111,25 +142,54 @@ export function useCanvasFileIO(deps: FileIODeps) {
       }
     }))
 
-    const loadedEdges = (result.edges || []).map((edge: any) => {
-      if (edge.style) return edge
-      const childNode = loadedNodes.find((node) => node.id === edge.target)
-      return {
-        ...edge,
-        style: childNode?.expansionColor
-          ? { stroke: childNode.expansionColor, strokeWidth: 2 }
-          : undefined
-      }
-    })
-
     deps.setNodes(deps.refreshNodeRuntimeData(rfNodes, loadedEdges))
     deps.setEdges(loadedEdges)
     deps.setRegions(loadedRegions)
     deps.resetSearch()
     deps.setDetailPanel(null)
-    setDirty(false)
-    showToast(tFromSettings('toast.fileLoaded'), 'success')
+    setDirty(Boolean(options?.dirty))
+    if (options?.toastKey) {
+      showToast(tFromSettings(options.toastKey), 'success')
+    }
   }, [deps, loadGraph, setDirty, showToast])
+
+  const applyLoadedGraph = useCallback(async (base64: string, openedFilePath: string | null) => {
+    const result = await loadFile(base64)
+    if (!result?.nodes || !Array.isArray(result.nodes)) {
+      throw new Error(result?.error || 'Invalid load response')
+    }
+
+    const graphName = typeof result.name === 'string' && result.name.trim()
+      ? result.name.trim()
+      : getFileNameFromPath(openedFilePath) || 'Untitled'
+
+    applyGraphData({
+      ...result,
+      name: graphName
+    }, openedFilePath, {
+      dirty: false,
+      toastKey: 'toast.fileLoaded'
+    })
+  }, [applyGraphData])
+
+  const handleRestoreLocalDraft = useCallback((draft: LocalDraftPayload) => {
+    const resolvedFileName = typeof draft.fileName === 'string' && draft.fileName.trim()
+      ? draft.fileName.trim()
+      : 'Untitled'
+
+    deps.setInitialInput(draft.initialInput || '')
+    deps.setInitialImages(draft.initialImages || [])
+    deps.setInitialGenerating(Boolean(draft.initialGenerating))
+
+    applyGraphData({
+      nodes: draft.nodes || [],
+      edges: draft.edges || [],
+      regions: draft.regions || [],
+      name: resolvedFileName
+    }, draft.filePath || null, {
+      dirty: true
+    })
+  }, [applyGraphData, deps])
 
   const handleSave = useCallback(async () => {
     try {
@@ -251,6 +311,7 @@ export function useCanvasFileIO(deps: FileIODeps) {
   return {
     handleSave,
     handleLoad,
-    handleNew
+    handleNew,
+    handleRestoreLocalDraft
   }
 }

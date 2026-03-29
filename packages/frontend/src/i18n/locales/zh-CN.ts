@@ -158,8 +158,11 @@ export const zhCN = {
   'toast.fileSaveFailed': '保存失败：{message}',
   'toast.fileLoaded': '文件加载成功！',
   'toast.fileLoadFailed': '加载失败：{message}',
+  'toast.localDraftRestored': '已恢复本地暂存内容',
+  'toast.localDraftStoreFailed': '本地暂存失败，请及时手动保存',
   'toast.contextUnavailable': '无法获取节点上下文，请重试',
   'toast.regionCreated': '区域已创建',
   'confirm.newUnsaved': '当前文件未保存，确定要新建吗？',
+  'confirm.restoreLocalDraft': '检测到本地暂存（{time}），是否恢复？',
   'app.syncLLMFailed': '同步 LLM 配置失败:'
 } as const

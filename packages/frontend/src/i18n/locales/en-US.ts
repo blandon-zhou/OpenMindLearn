@@ -158,8 +158,11 @@ export const enUS = {
   'toast.fileSaveFailed': 'Save failed: {message}',
   'toast.fileLoaded': 'File loaded.',
   'toast.fileLoadFailed': 'Load failed: {message}',
+  'toast.localDraftRestored': 'Recovered local draft.',
+  'toast.localDraftStoreFailed': 'Failed to store local draft. Please save manually.',
   'toast.contextUnavailable': 'Cannot read node context. Please retry.',
   'toast.regionCreated': 'Region created.',
   'confirm.newUnsaved': 'Current file is not saved. Create a new one anyway?',
+  'confirm.restoreLocalDraft': 'A local draft from {time} was found. Restore it?',
   'app.syncLLMFailed': 'Failed to sync LLM config:'
 } as const

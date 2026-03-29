@@ -16,6 +16,7 @@ import { useToastStore } from '../../stores/toastStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useCanvasContextMenu } from '../../hooks/useCanvasContextMenu'
 import { useCanvasFileIO } from '../../hooks/useCanvasFileIO'
+import { useCanvasLocalDraft } from '../../hooks/useCanvasLocalDraft'
 import { useCanvasNodes } from '../../hooks/useCanvasNodes'
 import { useCanvasRegions } from '../../hooks/useCanvasRegions'
 import { useCanvasSearch } from '../../hooks/useCanvasSearch'
@@ -120,7 +121,7 @@ export function Canvas() {
     focusSearchResult,
     resetSearch
   } = useCanvasSearch(nodes, viewport)
-  const { handleSave, handleLoad, handleNew } = useCanvasFileIO({
+  const { handleSave, handleLoad, handleNew, handleRestoreLocalDraft } = useCanvasFileIO({
     nodes,
     edges,
     regions,
@@ -141,6 +142,15 @@ export function Canvas() {
     setInitialInput,
     setInitialGenerating,
     setInitialImages
+  })
+  useCanvasLocalDraft({
+    nodes,
+    edges,
+    regions,
+    initialInput,
+    initialImages,
+    initialGenerating,
+    onRestoreDraft: handleRestoreLocalDraft
   })
   useGlobalImagePaste({
     enabled: canvasMode === 'learn',
