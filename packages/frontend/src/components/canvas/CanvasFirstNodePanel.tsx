@@ -1,6 +1,7 @@
-import { ClipboardPaste, ImagePlus, Sparkles, X } from 'lucide-react'
+import { ClipboardPaste, FilePlus2, ImagePlus, Sparkles, X } from 'lucide-react'
 import type { ChangeEvent, ClipboardEvent } from 'react'
-import type { NodeImage } from '../../types'
+import type { NodeAttachment, NodeImage } from '../../types'
+import { formatFileSize } from '../../utils/attachment'
 
 interface CanvasFirstNodePanelProps {
   mode: 'learn' | 'view'
@@ -8,10 +9,13 @@ interface CanvasFirstNodePanelProps {
   initialInput: string
   initialGenerating: boolean
   initialImages: NodeImage[]
+  initialAttachments: NodeAttachment[]
   onInitialInputChange: (value: string) => void
   onInitialInputPaste: (e: ClipboardEvent<HTMLTextAreaElement>) => void
   onInitialImageUpload: (e: ChangeEvent<HTMLInputElement>) => void
+  onInitialAttachmentUpload: (e: ChangeEvent<HTMLInputElement>) => void
   onRemoveInitialImage: (imageId: string) => void
+  onRemoveInitialAttachment: (attachmentId: string) => void
   onPreviewImage: (src: string) => void
   onCreateFromText: () => void
   onGenerateFromPrompt: () => void
@@ -24,10 +28,13 @@ export function CanvasFirstNodePanel({
   initialInput,
   initialGenerating,
   initialImages,
+  initialAttachments,
   onInitialInputChange,
   onInitialInputPaste,
   onInitialImageUpload,
+  onInitialAttachmentUpload,
   onRemoveInitialImage,
+  onRemoveInitialAttachment,
   onPreviewImage,
   onCreateFromText,
   onGenerateFromPrompt,
@@ -82,12 +89,44 @@ export function CanvasFirstNodePanel({
           </div>
         )}
 
+        {initialAttachments.length > 0 && (
+          <div className="mt-3 rounded-lg border border-border/70 bg-muted/25 p-2">
+            <div className="mb-2 inline-flex items-center rounded-md border border-border/60 bg-background/80 px-2 py-1 text-[11px] text-muted-foreground">
+              {t('canvas.firstNode.attachmentsAdded', { count: initialAttachments.length })}
+            </div>
+            <div className="space-y-1">
+              {initialAttachments.map((attachment) => (
+                <div key={attachment.id} className="flex items-center gap-2 rounded-md border border-border/60 bg-background px-2 py-1.5 text-xs">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-foreground">{attachment.name}</div>
+                    <div className="text-[11px] text-muted-foreground">{formatFileSize(attachment.size)}</div>
+                  </div>
+                  <button
+                    onClick={() => onRemoveInitialAttachment(attachment.id)}
+                    className="w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
+                    title={t('node.removeAttachment')}
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="mt-3 flex items-center justify-between">
-          <label className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded border border-border hover:bg-accent cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
-            <ImagePlus className="w-4 h-4" />
-            {t('canvas.firstNode.addImage')}
-            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="hidden" onChange={onInitialImageUpload} />
-          </label>
+          <div className="flex items-center gap-2">
+            <label className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded border border-border hover:bg-accent cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
+              <ImagePlus className="w-4 h-4" />
+              {t('canvas.firstNode.addImage')}
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="hidden" onChange={onInitialImageUpload} />
+            </label>
+            <label className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded border border-border hover:bg-accent cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
+              <FilePlus2 className="w-4 h-4" />
+              {t('canvas.firstNode.addAttachment')}
+              <input type="file" multiple className="hidden" onChange={onInitialAttachmentUpload} />
+            </label>
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={onCreateFromText}

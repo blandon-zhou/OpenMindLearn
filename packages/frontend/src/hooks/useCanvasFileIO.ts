@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { useGraphStore } from '../stores/graphStore'
 import { useToastStore } from '../stores/toastStore'
 import { saveFile, loadFile } from '../services/api'
-import type { Node, SourceReference, Region, NodeImage } from '../types'
+import type { Node, SourceReference, Region, NodeImage, NodeAttachment } from '../types'
 import type { ExpandMode } from '../stores/settingsStore'
 import type { SourceHighlight } from '../types/canvas'
 import {
@@ -48,6 +48,7 @@ export interface FileIODeps {
   handleSaveNodeContent: (nodeId: string, content: string) => void
   handleExpand: (...args: any[]) => Promise<void>
   handleImagesChange: (nodeId: string, images: NodeImage[]) => void
+  handleAttachmentsChange: (nodeId: string, attachments: NodeAttachment[]) => void
   resetSearch: () => void
   setDetailPanel: (v: null) => void
   setMetaEditor: (v: null) => void
@@ -55,7 +56,8 @@ export interface FileIODeps {
   setShowRegionPanel: (v: boolean) => void
   setInitialInput: (v: string) => void
   setInitialGenerating: (v: boolean) => void
-  setInitialImages: (v: any[]) => void
+  setInitialImages: (v: NodeImage[]) => void
+  setInitialAttachments: (v: NodeAttachment[]) => void
 }
 
 export interface LocalDraftPayload {
@@ -66,6 +68,7 @@ export interface LocalDraftPayload {
   regions: Region[]
   initialInput?: string
   initialImages?: NodeImage[]
+  initialAttachments?: NodeAttachment[]
   initialGenerating?: boolean
 }
 
@@ -132,7 +135,9 @@ export function useCanvasFileIO(deps: FileIODeps) {
         expansionColor: node.expansionColor,
         sourceRef: node.sourceRef,
         images: node.images || [],
+        attachments: node.attachments || [],
         onImagesChange: (imgs: NodeImage[]) => deps.handleImagesChange(node.id, imgs),
+        onAttachmentsChange: (attachments: NodeAttachment[]) => deps.handleAttachmentsChange(node.id, attachments),
         onGenerate: (c: string) => deps.handleGenerate(node.id, c),
         onSaveContent: (c: string) => deps.handleSaveNodeContent(node.id, c),
         onExpand: (text: string, selectedIds?: string[], sourceRef?: SourceReference, expandMode?: ExpandMode) =>
@@ -179,6 +184,7 @@ export function useCanvasFileIO(deps: FileIODeps) {
 
     deps.setInitialInput(draft.initialInput || '')
     deps.setInitialImages(draft.initialImages || [])
+    deps.setInitialAttachments(draft.initialAttachments || [])
     deps.setInitialGenerating(Boolean(draft.initialGenerating))
 
     applyGraphData({
@@ -209,7 +215,8 @@ export function useCanvasFileIO(deps: FileIODeps) {
         versions: node.data.versions || [],
         expansionColor: node.data.expansionColor,
         sourceRef: node.data.sourceRef,
-        images: node.data.images || []
+        images: node.data.images || [],
+        attachments: node.data.attachments || []
       }))
 
       const result = await saveFile(graphNodes, deps.edges, fileName, deps.regions)
@@ -301,6 +308,7 @@ export function useCanvasFileIO(deps: FileIODeps) {
     deps.setInitialInput('')
     deps.setInitialGenerating(false)
     deps.setInitialImages([])
+    deps.setInitialAttachments([])
     deps.resetSearch()
     deps.setDetailPanel(null)
     deps.setMetaEditor(null)

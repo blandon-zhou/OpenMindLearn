@@ -5,6 +5,14 @@ export interface NodeImage {
   name?: string
 }
 
+export interface NodeAttachment {
+  id: string
+  base64: string
+  mimeType: string
+  name: string
+  size: number
+}
+
 export interface SourceReference {
   upstreamFingerprintBase64: string
   rangeStart: number
@@ -45,4 +53,5 @@ export interface Node {
   expansionColor?: string
   sourceRef?: SourceReference
   images?: NodeImage[]
+  attachments?: NodeAttachment[]
 }

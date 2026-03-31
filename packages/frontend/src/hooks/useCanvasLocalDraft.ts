@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useGraphStore } from '../stores/graphStore'
 import { useToastStore } from '../stores/toastStore'
-import type { NodeImage, Region } from '../types'
+import type { NodeImage, NodeAttachment, Region } from '../types'
 import { buildNodeSnapshots } from '../utils/graphSnapshot'
 import { useI18n } from './useI18n'
 import type { LocalDraftPayload } from './useCanvasFileIO'
@@ -22,6 +22,7 @@ interface CanvasLocalDraftOptions {
   regions: Region[]
   initialInput: string
   initialImages: NodeImage[]
+  initialAttachments: NodeAttachment[]
   initialGenerating: boolean
   onRestoreDraft: (draft: LocalDraftPayload) => void
 }
@@ -57,6 +58,7 @@ function hasDraftContent(payload: LocalDraftPayload) {
     || payload.regions.length > 0
     || Boolean(payload.initialInput?.trim())
     || (payload.initialImages?.length || 0) > 0
+    || (payload.initialAttachments?.length || 0) > 0
 }
 
 export function useCanvasLocalDraft(options: CanvasLocalDraftOptions) {
@@ -79,6 +81,7 @@ export function useCanvasLocalDraft(options: CanvasLocalDraftOptions) {
     regions: options.regions,
     initialInput: options.initialInput,
     initialImages: options.initialImages,
+    initialAttachments: options.initialAttachments,
     initialGenerating: options.initialGenerating
   }), [
     fileName,
@@ -88,10 +91,14 @@ export function useCanvasLocalDraft(options: CanvasLocalDraftOptions) {
     options.regions,
     options.initialInput,
     options.initialImages,
+    options.initialAttachments,
     options.initialGenerating
   ])
 
-  const shouldKeepDraft = isDirty || Boolean(payload.initialInput?.trim()) || (payload.initialImages?.length || 0) > 0
+  const shouldKeepDraft = isDirty
+    || Boolean(payload.initialInput?.trim())
+    || (payload.initialImages?.length || 0) > 0
+    || (payload.initialAttachments?.length || 0) > 0
   const payloadRef = useRef(payload)
   const shouldKeepDraftRef = useRef(shouldKeepDraft)
 
@@ -135,6 +142,7 @@ export function useCanvasLocalDraft(options: CanvasLocalDraftOptions) {
       || options.regions.length > 0
       || options.initialInput.trim().length > 0
       || options.initialImages.length > 0
+      || options.initialAttachments.length > 0
     ) {
       restoreHandledRef.current = true
       return

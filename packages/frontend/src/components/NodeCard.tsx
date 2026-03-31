@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Handle, Position, NodeResizer } from '@xyflow/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Sparkles, Loader2, Save, ImagePlus, X } from 'lucide-react'
+import { Sparkles, Loader2, Save, ImagePlus, FilePlus2, Paperclip, Download, X } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { ImageLightbox } from './ImageLightbox'
 import { ContextPanel } from './ContextPanel'
@@ -13,6 +13,7 @@ import type { NodeCardProps } from '../types/nodeCard'
 
 import { fingerprintBase64 } from '../utils/textMeta'
 import { readFilesAsNodeImages, readClipboardImages } from '../utils/image'
+import { formatFileSize, readFilesAsNodeAttachments, downloadNodeAttachment } from '../utils/attachment'
 import { getContainerPlainText, clearSourceHighlightMarks, applySourceHighlightByRanges } from '../utils/sourceHighlight'
 import { useNodeCardSelection } from '../hooks/useNodeCardSelection'
 import { useI18n } from '../hooks/useI18n'
@@ -22,6 +23,8 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
   const isGenerating = Boolean(data.isGenerating)
   const images = data.images || []
   const hasImages = images.length > 0
+  const attachments = data.attachments || []
+  const hasAttachments = attachments.length > 0
   const { t } = useI18n()
   const [isEditing, setIsEditing] = useState(data.isEditing || false)
   const [content, setContent] = useState(data.content)
@@ -42,6 +45,23 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
     })
     e.target.value = ''
   }, [data])
+
+  const handleAttachmentUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    readFilesAsNodeAttachments(files).then(({ attachments: newAttachments, tooLargeFiles }) => {
+      if (newAttachments.length > 0) {
+        data.onAttachmentsChange?.([...(data.attachments || []), ...newAttachments])
+      }
+      if (tooLargeFiles.length > 0) {
+        const displayNames = tooLargeFiles.length > 3
+          ? `${tooLargeFiles.slice(0, 3).join(', ')}...`
+          : tooLargeFiles.join(', ')
+        showToast(t('toast.attachmentsTooLarge', { files: displayNames, maxSize: '50MB' }), 'error')
+      }
+    })
+    e.target.value = ''
+  }, [data, showToast, t])
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     if (isReadOnly) return
@@ -151,6 +171,15 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
     data.onSaveContent(content)
     setIsEditing(false)
   }
+
+  const handleDownloadAttachment = useCallback((attachment: typeof attachments[number]) => {
+    try {
+      downloadNodeAttachment(attachment)
+    } catch (error) {
+      console.error('Failed to download attachment:', error)
+      showToast(t('toast.attachmentDownloadFailed'), 'error')
+    }
+  }, [showToast, t])
 
   return (
     <div
@@ -300,6 +329,39 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
             </div>
           </div>
         )}
+
+        {hasAttachments && (
+          <div className="mt-1 shrink-0 nowheel nodrag space-y-1">
+            {attachments.map((attachment) => (
+              <div key={attachment.id} className="flex items-center gap-2 rounded border border-border/65 bg-muted/30 px-2 py-1 text-[11px]">
+                <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-foreground" title={attachment.name}>{attachment.name}</div>
+                  <div className="text-muted-foreground">{formatFileSize(attachment.size)}</div>
+                </div>
+                <button
+                  onClick={() => handleDownloadAttachment(attachment)}
+                  className="w-5 h-5 rounded border border-border/70 text-muted-foreground hover:text-foreground hover:bg-background flex items-center justify-center transition-colors"
+                  title={t('node.downloadAttachment')}
+                >
+                  <Download className="w-3 h-3" />
+                </button>
+                {!isReadOnly && isEditing && (
+                  <button
+                    onClick={() => {
+                      const next = attachments.filter((item) => item.id !== attachment.id)
+                      data.onAttachmentsChange?.(next)
+                    }}
+                    className="w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
+                    title={t('node.removeAttachment')}
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {isEditing && !isReadOnly && (
@@ -311,6 +373,14 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
             <ImagePlus className="w-3 h-3" />
             <span>{t('node.imageButton', { count: images.length > 0 ? `(${images.length})` : '' })}</span>
             <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="hidden" onChange={handleFileUpload} />
+          </label>
+          <label
+            className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded border border-border/70 cursor-pointer text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            title={t('node.addAttachment')}
+          >
+            <FilePlus2 className="w-3 h-3" />
+            <span>{t('node.attachmentButton', { count: attachments.length > 0 ? `(${attachments.length})` : '' })}</span>
+            <input type="file" multiple className="hidden" onChange={handleAttachmentUpload} />
           </label>
           <button
             onClick={handleSave}

@@ -5,7 +5,7 @@ import { useSettingsStore, type ExpandMode } from '../stores/settingsStore'
 import { useToastStore } from '../stores/toastStore'
 import { generateNode, expandNode, stripImagesFromNodes } from '../services/api'
 import { getExpansionColor } from '../utils/colors'
-import type { Node, SourceReference, Region, NodeVersion, NodeImage } from '../types'
+import type { Node, SourceReference, Region, NodeVersion, NodeImage, NodeAttachment } from '../types'
 import type { SourceHighlight, MetaEditorState, VersionDialogState } from '../types/canvas'
 import {
   NODE_DEFAULT_WIDTH, NODE_DEFAULT_HEIGHT,
@@ -103,6 +103,18 @@ export function useCanvasNodes(
     })
   }, [getEdges, refreshNodeRuntimeData, setNodes])
 
+  const handleAttachmentsChange = useCallback((nodeId: string, attachments: NodeAttachment[]) => {
+    setNodes((nds) => {
+      const now = new Date().toISOString()
+      const nextNodes = nds.map((node) =>
+        node.id === nodeId
+          ? { ...node, data: { ...node.data, attachments, updatedAt: now } }
+          : node
+      )
+      return refreshNodeRuntimeData(nextNodes, getEdges())
+    })
+  }, [getEdges, refreshNodeRuntimeData, setNodes])
+
   const handleGenerate = useCallback(async (nodeId: string, content: string) => {
     const currentNode = getNodes().find((n) => n.id === nodeId)
     const images: NodeImage[] = (currentNode?.data?.images as NodeImage[]) || []
@@ -174,7 +186,9 @@ export function useCanvasNodes(
         expansionColor,
         sourceRef,
         images: [] as NodeImage[],
+        attachments: [] as NodeAttachment[],
         onImagesChange: (imgs: NodeImage[]) => handleImagesChange(newNodeId, imgs),
+        onAttachmentsChange: (attachments: NodeAttachment[]) => handleAttachmentsChange(newNodeId, attachments),
         onGenerate: (c: string) => handleGenerate(newNodeId, c),
         onSaveContent: (c: string) => handleSaveNodeContent(newNodeId, c),
         onExpand: (nextText: string, selectedIds?: string[], nextSourceRef?: SourceReference, nextExpandMode?: ExpandMode) =>
@@ -253,7 +267,7 @@ export function useCanvasNodes(
         return refreshNodeRuntimeData(updatedNodes, edgesWithNewEdge)
       })
     }
-  }, [getNodes, getEdges, handleGenerate, handleImagesChange, handleSaveNodeContent, llmSettings.contextMaxDepth, refreshNodeRuntimeData, setEdges, setNodes])
+  }, [getNodes, getEdges, handleGenerate, handleAttachmentsChange, handleImagesChange, handleSaveNodeContent, llmSettings.contextMaxDepth, refreshNodeRuntimeData, setEdges, setNodes])
 
   const createNodeAtPosition = useCallback(
     (
@@ -262,6 +276,7 @@ export function useCanvasNodes(
       isEditing: boolean,
       question?: string,
       initialImages?: NodeImage[],
+      initialAttachments?: NodeAttachment[],
       initialThinking?: string,
       initialIsGenerating = false
     ) => {
@@ -292,7 +307,9 @@ export function useCanvasNodes(
         note: '',
         versions: [] as NodeVersion[],
         images: initialImages || [] as NodeImage[],
+        attachments: initialAttachments || [] as NodeAttachment[],
         onImagesChange: (imgs: NodeImage[]) => handleImagesChange(nodeId, imgs),
+        onAttachmentsChange: (attachments: NodeAttachment[]) => handleAttachmentsChange(nodeId, attachments),
         onGenerate: (c: string) => handleGenerate(nodeId, c),
         onSaveContent: (c: string) => handleSaveNodeContent(nodeId, c),
         onExpand: (text: string, selectedIds?: string[], sourceRef?: SourceReference, expandMode?: ExpandMode) =>
@@ -307,13 +324,14 @@ export function useCanvasNodes(
       return refreshNodeRuntimeData(nextNodes, currentEdges)
     })
     return nodeId
-  }, [getEdges, handleGenerate, handleExpand, handleImagesChange, handleSaveNodeContent, refreshNodeRuntimeData, setNodes])
+  }, [getEdges, handleGenerate, handleAttachmentsChange, handleExpand, handleImagesChange, handleSaveNodeContent, refreshNodeRuntimeData, setNodes])
 
   const createFirstNode = useCallback((
     content: string,
     isEditing: boolean,
     question?: string,
     initialImages?: NodeImage[],
+    initialAttachments?: NodeAttachment[],
     initialThinking?: string,
     initialIsGenerating = false
   ) => {
@@ -323,7 +341,7 @@ export function useCanvasNodes(
       center,
       { nodeWidth: NODE_DEFAULT_WIDTH, nodeHeight: NODE_DEFAULT_HEIGHT }
     )
-    return createNodeAtPosition(position, content, isEditing, question, initialImages, initialThinking, initialIsGenerating)
+    return createNodeAtPosition(position, content, isEditing, question, initialImages, initialAttachments, initialThinking, initialIsGenerating)
   }, [createNodeAtPosition, getCanvasCenterFlowPosition, getNodes])
 
   const createNode = useCallback((position: { x: number; y: number }) => {
@@ -447,6 +465,7 @@ export function useCanvasNodes(
     handleGenerate,
     handleExpand,
     handleImagesChange,
+    handleAttachmentsChange,
     createNodeAtPosition,
     createFirstNode,
     createNode,

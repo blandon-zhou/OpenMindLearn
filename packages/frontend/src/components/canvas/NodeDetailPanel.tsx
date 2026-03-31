@@ -1,9 +1,11 @@
 import type React from 'react'
-import { X } from 'lucide-react'
+import { Download, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { NodeImage } from '../../types'
+import type { NodeAttachment, NodeImage } from '../../types'
 import type { DetailPanelState } from '../../types/canvas'
+import { downloadNodeAttachment, formatFileSize } from '../../utils/attachment'
+import { useToastStore } from '../../stores/toastStore'
 
 interface NodeDetailPanelProps {
   detailPanel: DetailPanelState | null
@@ -28,10 +30,21 @@ export function NodeDetailPanel({
   onPreviewImage,
   t
 }: NodeDetailPanelProps) {
+  const { showToast } = useToastStore()
   if (!detailPanel) return null
 
   const detailNode = nodes.find((n) => n.id === detailPanel.nodeId)
   const detailImages: NodeImage[] = (detailNode?.data?.images as NodeImage[]) || []
+  const detailAttachments: NodeAttachment[] = (detailNode?.data?.attachments as NodeAttachment[]) || []
+
+  const handleDownloadAttachment = (attachment: NodeAttachment) => {
+    try {
+      downloadNodeAttachment(attachment)
+    } catch (error) {
+      console.error('Failed to download attachment:', error)
+      showToast(t('toast.attachmentDownloadFailed'), 'error')
+    }
+  }
 
   return (
     <div
@@ -77,7 +90,7 @@ export function NodeDetailPanel({
         </div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-5" onWheelCapture={(event) => event.stopPropagation()}>
-        {(detailImages.length > 0 || detailPanel.question.trim()) && (
+        {(detailImages.length > 0 || detailAttachments.length > 0 || detailPanel.question.trim()) && (
           <div className="mb-4 rounded border border-border bg-muted/40 p-3">
             <div className="text-xs text-muted-foreground mb-2">{t('canvas.detail.question')}</div>
             {detailImages.length > 0 && (
@@ -105,6 +118,26 @@ export function NodeDetailPanel({
                   ))}
                 </div>
               </>
+            )}
+            {detailAttachments.length > 0 && (
+              <div className="mb-3 space-y-1.5">
+                {detailAttachments.map((attachment) => (
+                  <div key={attachment.id} className="flex items-center justify-between gap-2 rounded-md border border-border/70 bg-background px-2 py-1.5 text-xs">
+                    <span className="truncate text-foreground">{attachment.name}</span>
+                    <div className="shrink-0 flex items-center gap-2">
+                      <span className="text-muted-foreground">{formatFileSize(attachment.size)}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadAttachment(attachment)}
+                        className="w-5 h-5 rounded border border-border/70 text-muted-foreground hover:text-foreground hover:bg-accent flex items-center justify-center transition-colors"
+                        title={t('node.downloadAttachment')}
+                      >
+                        <Download className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
             {detailPanel.question.trim() && (
               <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{detailPanel.question}</div>

@@ -30,7 +30,8 @@ export function buildNodeSnapshots(rfNodes: any[], rfEdges: any[]): Node[] {
     versions: n.data.versions || [],
     expansionColor: n.data.expansionColor,
     sourceRef: n.data.sourceRef,
-    images: n.data.images || []
+    images: n.data.images || [],
+    attachments: n.data.attachments || []
   }))
 }
 

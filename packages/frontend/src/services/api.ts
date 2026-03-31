@@ -21,7 +21,7 @@ export async function generateNode(prompt: string, images?: NodeImage[]) {
 }
 
 export function stripImagesFromNodes(nodes: Node[]): Node[] {
-  return nodes.map(({ images, ...rest }) => rest) as Node[]
+  return nodes.map(({ images, attachments, ...rest }) => rest) as Node[]
 }
 
 export async function expandNode(

@@ -9,9 +9,10 @@ import { ImageLightbox } from '../ImageLightbox'
 import { cn } from '../../utils/cn'
 import { generateNode } from '../../services/api'
 import type { CanvasMode, DetailPanelState, MetaEditorState, VersionDialogState } from '../../types/canvas'
-import type { NodeImage } from '../../types'
+import type { NodeAttachment, NodeImage } from '../../types'
 import { buildDiffLines } from '../../utils/search'
 import { readClipboardImages, readFilesAsNodeImages } from '../../utils/image'
+import { readFilesAsNodeAttachments } from '../../utils/attachment'
 import { useToastStore } from '../../stores/toastStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useCanvasContextMenu } from '../../hooks/useCanvasContextMenu'
@@ -43,6 +44,7 @@ export function Canvas() {
   const [initialInput, setInitialInput] = useState('')
   const [initialGenerating, setInitialGenerating] = useState(false)
   const [initialImages, setInitialImages] = useState<NodeImage[]>([])
+  const [initialAttachments, setInitialAttachments] = useState<NodeAttachment[]>([])
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [metaEditor, setMetaEditor] = useState<MetaEditorState | null>(null)
   const [versionDialog, setVersionDialog] = useState<VersionDialogState | null>(null)
@@ -73,6 +75,7 @@ export function Canvas() {
     handleGenerate,
     handleExpand,
     handleImagesChange,
+    handleAttachmentsChange,
     createFirstNode,
     createNode,
     triggerNodeEdit,
@@ -134,6 +137,7 @@ export function Canvas() {
     handleSaveNodeContent,
     handleExpand,
     handleImagesChange,
+    handleAttachmentsChange,
     resetSearch,
     setDetailPanel,
     setMetaEditor,
@@ -141,7 +145,8 @@ export function Canvas() {
     setShowRegionPanel,
     setInitialInput,
     setInitialGenerating,
-    setInitialImages
+    setInitialImages,
+    setInitialAttachments
   })
   useCanvasLocalDraft({
     nodes,
@@ -149,6 +154,7 @@ export function Canvas() {
     regions,
     initialInput,
     initialImages,
+    initialAttachments,
     initialGenerating,
     onRestoreDraft: handleRestoreLocalDraft
   })
@@ -277,18 +283,23 @@ export function Canvas() {
   const handleCreateFirstFromText = useCallback(() => {
     const text = initialInput.trim()
     if (!text) return
-    createFirstNode(text, false, text, initialImages.length > 0 ? initialImages : undefined)
+    const images = initialImages.length > 0 ? initialImages : undefined
+    const attachments = initialAttachments.length > 0 ? initialAttachments : undefined
+    createFirstNode(text, false, text, images, attachments)
     setInitialInput('')
     setInitialImages([])
+    setInitialAttachments([])
     showToast(t('canvas.toast.firstNodeCreated'), 'success')
-  }, [createFirstNode, initialInput, initialImages, showToast, t])
+  }, [createFirstNode, initialInput, initialAttachments, initialImages, showToast, t])
   const handleGenerateFirstFromPrompt = useCallback(async () => {
     const prompt = initialInput.trim()
     if (!prompt) return
     const images = initialImages.length > 0 ? initialImages : undefined
-    const placeholderNodeId = createFirstNode('', false, prompt, images, '', true)
+    const attachments = initialAttachments.length > 0 ? initialAttachments : undefined
+    const placeholderNodeId = createFirstNode('', false, prompt, images, attachments, '', true)
     setInitialInput('')
     setInitialImages([])
+    setInitialAttachments([])
     setInitialGenerating(true)
     try {
       const result = await generateNode(prompt, images)
@@ -337,7 +348,7 @@ export function Canvas() {
     } finally {
       setInitialGenerating(false)
     }
-  }, [createFirstNode, edges, initialInput, initialImages, refreshNodeRuntimeData, setNodes, showToast, t])
+  }, [createFirstNode, edges, initialAttachments, initialInput, initialImages, refreshNodeRuntimeData, setNodes, showToast, t])
   const handleInitialImageUpload = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
@@ -346,6 +357,22 @@ export function Canvas() {
     })
     e.target.value = ''
   }, [])
+  const handleInitialAttachmentUpload = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    readFilesAsNodeAttachments(files).then(({ attachments, tooLargeFiles }) => {
+      if (attachments.length > 0) {
+        setInitialAttachments((prev) => [...prev, ...attachments])
+      }
+      if (tooLargeFiles.length > 0) {
+        const displayNames = tooLargeFiles.length > 3
+          ? `${tooLargeFiles.slice(0, 3).join(', ')}...`
+          : tooLargeFiles.join(', ')
+        showToast(t('toast.attachmentsTooLarge', { files: displayNames, maxSize: '50MB' }), 'error')
+      }
+    })
+    e.target.value = ''
+  }, [showToast, t])
   const handleInitialInputPaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items
     if (!items) return
@@ -464,10 +491,13 @@ export function Canvas() {
             initialInput={initialInput}
             initialGenerating={initialGenerating}
             initialImages={initialImages}
+            initialAttachments={initialAttachments}
             onInitialInputChange={setInitialInput}
             onInitialInputPaste={handleInitialInputPaste}
             onInitialImageUpload={handleInitialImageUpload}
+            onInitialAttachmentUpload={handleInitialAttachmentUpload}
             onRemoveInitialImage={(imageId) => setInitialImages((prev) => prev.filter((img) => img.id !== imageId))}
+            onRemoveInitialAttachment={(attachmentId) => setInitialAttachments((prev) => prev.filter((item) => item.id !== attachmentId))}
             onPreviewImage={setPreviewImage}
             onCreateFromText={handleCreateFirstFromText}
             onGenerateFromPrompt={handleGenerateFirstFromPrompt}

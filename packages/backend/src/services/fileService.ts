@@ -1,6 +1,6 @@
 import JSZip from 'jszip'
 import { Builder, Parser } from 'xml2js'
-import { Node, Region, SourceReference, NodeImage } from '../types/index.js'
+import { Node, Region, SourceReference, NodeImage, NodeAttachment } from '../types/index.js'
 
 interface Edge {
   id: string
@@ -32,6 +32,14 @@ interface NodeDescriptorImage {
   file: string
 }
 
+interface NodeDescriptorAttachment {
+  id: string
+  mimeType: string
+  name: string
+  size: number
+  file: string
+}
+
 interface NodeDescriptor {
   id: string
   contentFile: string
@@ -48,15 +56,17 @@ interface NodeDescriptor {
   expansionColor?: string
   sourceRef?: SourceReference
   images?: NodeDescriptorImage[]
+  attachments?: NodeDescriptorAttachment[]
 }
 
 const NODE_DEFAULT_WIDTH = 380
 const NODE_DEFAULT_HEIGHT = 300
 const NODE_MIN_WIDTH = 280
 const NODE_MIN_HEIGHT = 200
-const OML_FORMAT_VERSION = '2.0'
+const OML_FORMAT_VERSION = '2.1'
 const OML_PARSE_PROFILE = 'nodes-directory-v2'
 const SUPPORTED_OML_MAJOR_VERSION = 2
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 
 function parseString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback
@@ -75,6 +85,45 @@ function sanitizeFileName(input: string, fallback: string): string {
   const value = (input || '').trim()
   const sanitized = value.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/-+/g, '-')
   return sanitized || fallback
+}
+
+function normalizeExtension(raw: string, fallback = 'bin'): string {
+  const extension = (raw || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  return extension || fallback
+}
+
+function getExtensionFromFileName(name: string): string | undefined {
+  const rawName = parseString(name)
+  const dotIndex = rawName.lastIndexOf('.')
+  if (dotIndex <= 0 || dotIndex >= rawName.length - 1) return undefined
+  return normalizeExtension(rawName.slice(dotIndex + 1), '')
+}
+
+function getExtensionFromMimeType(mimeType: string, fallback: string): string {
+  const normalizedMimeType = parseString(mimeType).toLowerCase()
+  const subtype = normalizedMimeType.split('/')[1] || ''
+  const primarySubtype = subtype.split('+')[0]
+  return normalizeExtension(primarySubtype, fallback)
+}
+
+function estimateBase64Size(base64: string): number {
+  const normalized = parseString(base64).replace(/\s+/g, '')
+  if (!normalized) return 0
+  const padding = normalized.endsWith('==') ? 2 : normalized.endsWith('=') ? 1 : 0
+  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding)
+}
+
+function resolveAttachmentSize(sizeValue: unknown, base64: string): number {
+  const declaredSize = parseNumber(sizeValue, -1)
+  const estimatedSize = estimateBase64Size(base64)
+  if (declaredSize <= 0) return estimatedSize
+  return Math.max(declaredSize, estimatedSize)
+}
+
+function assertAttachmentSizeWithinLimit(size: number, nodeId: string, name: string) {
+  if (size > MAX_ATTACHMENT_BYTES) {
+    throw new Error(`Attachment too large at node ${nodeId}: ${name} (${size} bytes)`)
+  }
 }
 
 function getVersionFileName(timestamp: string, index: number): string {
@@ -189,23 +238,50 @@ export async function saveOmlFile(graphData: GraphData): Promise<string> {
         nodeFolder.file('thinking.md', thinking)
       }
 
-      // Save images to nodes/{nodeId}/resources/
+      const nodeResourcesFolder = nodeFolder.folder('resources')
+      const nodeImagesFolder = nodeResourcesFolder?.folder('images')
+      const nodeAttachmentsFolder = nodeResourcesFolder?.folder('attachments')
+
+      // Save images to nodes/{nodeId}/resources/images/
       const imageDescriptors: NodeDescriptorImage[] = []
-      if (node.images && node.images.length > 0) {
-        const nodeResourcesFolder = nodeFolder.folder('resources')
-        if (nodeResourcesFolder) {
-          node.images.forEach((img) => {
-            const extension = img.mimeType.split('/')[1] || 'png'
-            const fileName = `${img.id}.${extension}`
-            nodeResourcesFolder.file(fileName, img.base64, { base64: true })
-            imageDescriptors.push({
-              id: img.id,
-              mimeType: img.mimeType,
-              name: img.name,
-              file: fileName
-            })
+      if (node.images && node.images.length > 0 && nodeImagesFolder) {
+        node.images.forEach((img) => {
+          const extension = getExtensionFromMimeType(img.mimeType, 'png')
+          const safeId = sanitizeFileName(parseString(img.id), `img-${Date.now()}`)
+          const fileName = `${safeId}.${extension}`
+          nodeImagesFolder.file(fileName, img.base64, { base64: true })
+          imageDescriptors.push({
+            id: img.id || safeId,
+            mimeType: img.mimeType,
+            name: img.name,
+            file: fileName
           })
-        }
+        })
+      }
+
+      // Save attachments to nodes/{nodeId}/resources/attachments/
+      const attachmentDescriptors: NodeDescriptorAttachment[] = []
+      if (node.attachments && node.attachments.length > 0 && nodeAttachmentsFolder) {
+        node.attachments.forEach((attachment, index) => {
+          const rawId = parseString(attachment.id, `att-${index + 1}`)
+          const safeId = sanitizeFileName(rawId, `att-${index + 1}`)
+          const resolvedName = parseString(attachment.name, `${safeId}.bin`)
+          const extension = getExtensionFromFileName(resolvedName)
+            || getExtensionFromMimeType(attachment.mimeType, 'bin')
+          const fileName = `${safeId}.${extension}`
+          const base64 = parseString(attachment.base64)
+          const resolvedSize = resolveAttachmentSize(attachment.size, base64)
+          assertAttachmentSizeWithinLimit(resolvedSize, node.id, resolvedName)
+
+          nodeAttachmentsFolder.file(fileName, base64, { base64: true })
+          attachmentDescriptors.push({
+            id: rawId || safeId,
+            mimeType: parseString(attachment.mimeType, 'application/octet-stream'),
+            name: resolvedName,
+            size: resolvedSize,
+            file: fileName
+          })
+        })
       }
 
       const descriptor: NodeDescriptor = {
@@ -232,7 +308,8 @@ export async function saveOmlFile(graphData: GraphData): Promise<string> {
         })),
         expansionColor: node.expansionColor,
         sourceRef: node.sourceRef,
-        images: imageDescriptors.length > 0 ? imageDescriptors : undefined
+        images: imageDescriptors.length > 0 ? imageDescriptors : undefined,
+        attachments: attachmentDescriptors.length > 0 ? attachmentDescriptors : undefined
       }
 
       nodeFolder.file('node.json', JSON.stringify(descriptor, null, 2))
@@ -327,12 +404,13 @@ export async function loadOmlFile(base64Data: string): Promise<GraphData> {
         ? descriptor.tags.map((tag) => parseString(tag)).filter(Boolean)
         : []
 
-      // Load images from nodes/{nodeId}/resources/
+      // Load images from nodes/{nodeId}/resources/images/ (fallback to legacy resources/)
       const imageMetas = Array.isArray(descriptor.images) ? descriptor.images : []
       const images: NodeImage[] = (await Promise.all(
         imageMetas.map(async (imgMeta): Promise<NodeImage | null> => {
-          const imgPath = `nodes/${nodeIdFromPath}/resources/${imgMeta.file}`
-          const imgFile = zip.file(imgPath)
+          const imgPath = `nodes/${nodeIdFromPath}/resources/images/${imgMeta.file}`
+          const legacyPath = `nodes/${nodeIdFromPath}/resources/${imgMeta.file}`
+          const imgFile = zip.file(imgPath) || zip.file(legacyPath)
           if (!imgFile) return null
           const base64 = await imgFile.async('base64')
           return {
@@ -343,6 +421,28 @@ export async function loadOmlFile(base64Data: string): Promise<GraphData> {
           }
         })
       )).filter((img): img is NodeImage => img !== null)
+
+      // Load attachments from nodes/{nodeId}/resources/attachments/
+      const attachmentMetas = Array.isArray(descriptor.attachments) ? descriptor.attachments : []
+      const attachments: NodeAttachment[] = (await Promise.all(
+        attachmentMetas.map(async (attachmentMeta): Promise<NodeAttachment | null> => {
+          const attachmentPath = `nodes/${nodeIdFromPath}/resources/attachments/${attachmentMeta.file}`
+          const attachmentFile = zip.file(attachmentPath)
+          if (!attachmentFile) return null
+          const base64 = await attachmentFile.async('base64')
+          const resolvedSize = resolveAttachmentSize(attachmentMeta.size, base64)
+          const resolvedName = parseString(attachmentMeta.name, attachmentMeta.file || 'attachment')
+          assertAttachmentSizeWithinLimit(resolvedSize, nodeIdFromPath, resolvedName)
+
+          return {
+            id: attachmentMeta.id || attachmentMeta.file,
+            base64,
+            mimeType: attachmentMeta.mimeType || 'application/octet-stream',
+            name: resolvedName,
+            size: resolvedSize
+          }
+        })
+      )).filter((attachment): attachment is NodeAttachment => attachment !== null)
 
       return {
         id: nodeId,
@@ -363,7 +463,8 @@ export async function loadOmlFile(base64Data: string): Promise<GraphData> {
         versions,
         expansionColor: parseString(descriptor.expansionColor) || undefined,
         sourceRef: normalizeSourceRef(descriptor.sourceRef),
-        images: images.length > 0 ? images : undefined
+        images: images.length > 0 ? images : undefined,
+        attachments: attachments.length > 0 ? attachments : undefined
       }
     })
   )
