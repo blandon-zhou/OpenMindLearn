@@ -1,5 +1,5 @@
 import type React from 'react'
-import { Download, X } from 'lucide-react'
+import { Download, MessageSquareText, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { NodeAttachment, NodeImage } from '../../types'
@@ -15,6 +15,7 @@ interface NodeDetailPanelProps {
   onStartResize: (event: React.MouseEvent) => void
   onChangeFontSize: (next: number | ((current: number) => number)) => void
   onClose: () => void
+  onOpenInChat: (nodeId: string) => void
   onPreviewImage: (src: string) => void
   t: (key: string, params?: Record<string, string | number>) => string
 }
@@ -27,6 +28,7 @@ export function NodeDetailPanel({
   onStartResize,
   onChangeFontSize,
   onClose,
+  onOpenInChat,
   onPreviewImage,
   t
 }: NodeDetailPanelProps) {
@@ -61,6 +63,14 @@ export function NodeDetailPanel({
           <div className="text-[11px] text-muted-foreground truncate">ID: {detailPanel.nodeId}</div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => onOpenInChat(detailPanel.nodeId)}
+            className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            title={t('canvas.detail.openInChat')}
+          >
+            <MessageSquareText className="w-3.5 h-3.5" />
+            {t('canvas.detail.openInChat')}
+          </button>
           <span className="text-xs text-muted-foreground">{t('canvas.detail.fontSize')}</span>
           <button
             onClick={() => onChangeFontSize((size) => Math.max(12, size - 1))}

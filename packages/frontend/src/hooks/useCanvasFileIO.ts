@@ -46,7 +46,7 @@ export interface FileIODeps {
   refreshNodeRuntimeData: (rfNodes: any[], edgeList: any[]) => any[]
   handleGenerate: (nodeId: string, content: string) => Promise<void>
   handleSaveNodeContent: (nodeId: string, content: string) => void
-  handleExpand: (...args: any[]) => Promise<void>
+  handleExpand: (...args: any[]) => string | void
   handleImagesChange: (nodeId: string, images: NodeImage[]) => void
   handleAttachmentsChange: (nodeId: string, attachments: NodeAttachment[]) => void
   resetSearch: () => void

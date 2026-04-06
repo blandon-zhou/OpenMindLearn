@@ -140,7 +140,7 @@ export function useCanvasNodes(
     })
   }, [getEdges, getNodes, refreshNodeRuntimeData, setNodes])
 
-  const handleExpand = useCallback(async (
+  const handleExpand = useCallback((
     text: string,
     parentId: string,
     selectedNodeIds?: string[],
@@ -213,60 +213,64 @@ export function useCanvasNodes(
     })
     setEdges((eds) => addEdge(newEdge, eds))
 
-    try {
-      const result = await expandNode(
-        text,
-        parentId,
-        stripImagesFromNodes(allNodes),
-        selectedNodeIds,
-        sourceRef,
-        expandMode,
-        llmSettings.contextMaxDepth,
-        parentImages.length > 0 ? parentImages : undefined
-      )
-      setNodes((nds) => {
-        const nowUpdated = new Date().toISOString()
-        const updatedNodes = nds.map((node) =>
-          node.id === newNodeId
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  content: result.content,
-                  thinking: result.thinking || '',
-                  question: text,
-                  updatedAt: nowUpdated,
-                  isGenerating: false,
-                  sourceRef: result.sourceRef || sourceRef
-                }
-              }
-            : node
+    void (async () => {
+      try {
+        const result = await expandNode(
+          text,
+          parentId,
+          stripImagesFromNodes(allNodes),
+          selectedNodeIds,
+          sourceRef,
+          expandMode,
+          llmSettings.contextMaxDepth,
+          parentImages.length > 0 ? parentImages : undefined
         )
-        return refreshNodeRuntimeData(updatedNodes, edgesWithNewEdge)
-      })
-    } catch (error) {
-      console.error('Failed to expand node:', error)
-      setNodes((nds) => {
-        const nowUpdated = new Date().toISOString()
-        const updatedNodes = nds.map((node) =>
-          node.id === newNodeId
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  content: tFromSettings('toast.nodeGenerateFailed'),
-                  thinking: '',
-                  question: text,
-                  updatedAt: nowUpdated,
-                  isGenerating: false,
-                  sourceRef
+        setNodes((nds) => {
+          const nowUpdated = new Date().toISOString()
+          const updatedNodes = nds.map((node) =>
+            node.id === newNodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    content: result.content,
+                    thinking: result.thinking || '',
+                    question: text,
+                    updatedAt: nowUpdated,
+                    isGenerating: false,
+                    sourceRef: result.sourceRef || sourceRef
+                  }
                 }
-              }
-            : node
-        )
-        return refreshNodeRuntimeData(updatedNodes, edgesWithNewEdge)
-      })
-    }
+              : node
+          )
+          return refreshNodeRuntimeData(updatedNodes, edgesWithNewEdge)
+        })
+      } catch (error) {
+        console.error('Failed to expand node:', error)
+        setNodes((nds) => {
+          const nowUpdated = new Date().toISOString()
+          const updatedNodes = nds.map((node) =>
+            node.id === newNodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    content: tFromSettings('toast.nodeGenerateFailed'),
+                    thinking: '',
+                    question: text,
+                    updatedAt: nowUpdated,
+                    isGenerating: false,
+                    sourceRef
+                  }
+                }
+              : node
+          )
+          return refreshNodeRuntimeData(updatedNodes, edgesWithNewEdge)
+        })
+      }
+    })()
+
+    return newNodeId
   }, [getNodes, getEdges, handleGenerate, handleAttachmentsChange, handleImagesChange, handleSaveNodeContent, llmSettings.contextMaxDepth, refreshNodeRuntimeData, setEdges, setNodes])
 
   const createNodeAtPosition = useCallback(

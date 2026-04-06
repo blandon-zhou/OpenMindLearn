@@ -6,6 +6,7 @@ import { Layers } from 'lucide-react'
 import { Toolbar } from '../Toolbar'
 import { NodeCard } from '../NodeCard'
 import { ImageLightbox } from '../ImageLightbox'
+import { ChatShell } from '../chat/ChatShell'
 import { cn } from '../../utils/cn'
 import { generateNode } from '../../services/api'
 import type { CanvasMode, DetailPanelState, MetaEditorState, VersionDialogState } from '../../types/canvas'
@@ -21,6 +22,7 @@ import { useCanvasLocalDraft } from '../../hooks/useCanvasLocalDraft'
 import { useCanvasNodes } from '../../hooks/useCanvasNodes'
 import { useCanvasRegions } from '../../hooks/useCanvasRegions'
 import { useCanvasSearch } from '../../hooks/useCanvasSearch'
+import { useConversationView } from '../../hooks/useConversationView'
 import { useI18n } from '../../hooks/useI18n'
 import { CanvasContextMenu } from './CanvasContextMenu'
 import { CanvasFirstNodePanel } from './CanvasFirstNodePanel'
@@ -35,9 +37,12 @@ import { VersionDialog } from './VersionDialog'
 import { useDetailPanelResize } from './hooks/useDetailPanelResize'
 import { useGlobalImagePaste } from './hooks/useGlobalImagePaste'
 import { useSourceLinkHighlight } from './hooks/useSourceLinkHighlight'
+
 const nodeTypes = { custom: NodeCard }
+
 export function Canvas() {
   const [canvasMode, setCanvasMode] = useState<CanvasMode>('learn')
+  const [surfaceMode, setSurfaceMode] = useState<'canvas' | 'chat'>('canvas')
   const [isFlowInteractive, setIsFlowInteractive] = useState(true)
   const [detailPanel, setDetailPanel] = useState<DetailPanelState | null>(null)
   const [detailFontSize, setDetailFontSize] = useState(15)
@@ -45,6 +50,10 @@ export function Canvas() {
   const [initialGenerating, setInitialGenerating] = useState(false)
   const [initialImages, setInitialImages] = useState<NodeImage[]>([])
   const [initialAttachments, setInitialAttachments] = useState<NodeAttachment[]>([])
+  const [chatActiveNodeId, setChatActiveNodeId] = useState<string | null>(null)
+  const [chatBranchParentNodeId, setChatBranchParentNodeId] = useState<string | null>(null)
+  const [chatDraft, setChatDraft] = useState('')
+  const [chatSubmitting, setChatSubmitting] = useState(false)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [metaEditor, setMetaEditor] = useState<MetaEditorState | null>(null)
   const [versionDialog, setVersionDialog] = useState<VersionDialogState | null>(null)
@@ -111,7 +120,9 @@ export function Canvas() {
     handleStartRegionDrag,
     handleStartRegionResize
   } = useCanvasRegions(nodes, setNodes, canvasMode, isFlowInteractive)
+
   regionsRef.current = regions
+
   const { contextMenu, setContextMenu, handlePaneContextMenu, handleNodeContextMenu } = useCanvasContextMenu(canvasMode)
   const {
     searchQuery,
@@ -148,6 +159,7 @@ export function Canvas() {
     setInitialImages,
     setInitialAttachments
   })
+
   useCanvasLocalDraft({
     nodes,
     edges,
@@ -158,6 +170,7 @@ export function Canvas() {
     initialGenerating,
     onRestoreDraft: handleRestoreLocalDraft
   })
+
   useGlobalImagePaste({
     enabled: canvasMode === 'learn',
     nodes,
@@ -166,6 +179,9 @@ export function Canvas() {
     showToast,
     t
   })
+
+  const conversationView = useConversationView(nodes as any[], edges as any[], chatActiveNodeId)
+
   const renderedNodes = useMemo(() => {
     const sourceLinkedSet = new Set(sourceLinkedNodeIds)
     return nodes.map((node) => ({
@@ -182,6 +198,7 @@ export function Canvas() {
       }
     }))
   }, [nodes, highlightedNodeSet, activeSearchNodeId, canvasMode, sourceLinkedNodeIds, triggerSourceHighlight])
+
   const renderedEdges = useMemo(() => {
     if (!sourceLinkedSourceNodeId || sourceLinkedNodeIds.length === 0) return edges
     const targetSet = new Set(sourceLinkedNodeIds)
@@ -199,6 +216,7 @@ export function Canvas() {
       }
     })
   }, [edges, sourceLinkedNodeIds, sourceLinkedSourceNodeId])
+
   const regionCreatePreview = useMemo(() => {
     if (!regionCreateDraft) return null
     const { startPointer, currentPointer } = regionCreateDraft
@@ -208,12 +226,20 @@ export function Canvas() {
     const height = Math.abs(currentPointer.y - startPointer.y)
     return { x, y, width, height }
   }, [regionCreateDraft])
+
   const selectedDiffLines = useMemo(() => {
     if (!versionDialog) return []
     const version = versionDialog.versions[selectedVersionIndex]
     if (!version) return []
     return buildDiffLines(version.content, versionDialog.currentContent)
   }, [selectedVersionIndex, versionDialog])
+
+  const activeChatNodeGenerating = useMemo(() => {
+    const activeId = conversationView.activeNodeId
+    if (!activeId) return false
+    return Boolean(conversationView.nodeById.get(activeId)?.isGenerating)
+  }, [conversationView.activeNodeId, conversationView.nodeById])
+
   useEffect(() => {
     setContextMenu(null)
     setRegionDrag(null)
@@ -238,6 +264,18 @@ export function Canvas() {
       clearSourceHighlight()
     }
   }, [canvasMode, clearSourceHighlight, setContextMenu, setNodes, setRegionDrag, setRegionTitleEdit, setShowRegionPanel])
+
+  useEffect(() => {
+    if (chatActiveNodeId && nodes.some((node) => node.id === chatActiveNodeId)) return
+    setChatActiveNodeId(conversationView.latestNodeId)
+  }, [chatActiveNodeId, conversationView.latestNodeId, nodes])
+
+  useEffect(() => {
+    if (!chatBranchParentNodeId) return
+    if (nodes.some((node) => node.id === chatBranchParentNodeId)) return
+    setChatBranchParentNodeId(null)
+  }, [chatBranchParentNodeId, nodes])
+
   const openNodeDetailById = useCallback((nodeId: string) => {
     const node = nodes.find((item) => item.id === nodeId)
     if (!node) return
@@ -248,10 +286,25 @@ export function Canvas() {
       question: String(node.data.question || '')
     })
   }, [nodes])
+
+  const openChatFromNode = useCallback((nodeId: string) => {
+    if (!nodes.some((node) => node.id === nodeId)) return
+    setSurfaceMode('chat')
+    setChatActiveNodeId(nodeId)
+    setChatBranchParentNodeId(null)
+  }, [nodes])
+
+  const handleOpenNodeInCanvas = useCallback((nodeId: string) => {
+    setSurfaceMode('canvas')
+    setCanvasMode('view')
+    openNodeDetailById(nodeId)
+  }, [openNodeDetailById])
+
   const handleNodeClick = useCallback((_: ReactMouseEvent, node: RFNode) => {
     if (canvasMode !== 'view') return
     openNodeDetailById(node.id)
   }, [canvasMode, openNodeDetailById])
+
   const openNodeMetaEditor = useCallback((nodeId: string) => {
     const node = nodes.find((item) => item.id === nodeId)
     if (!node) return
@@ -261,6 +314,7 @@ export function Canvas() {
       note: node.data.note || ''
     })
   }, [nodes])
+
   const openVersionDialog = useCallback((nodeId: string) => {
     const node = nodes.find((item) => item.id === nodeId)
     if (!node) return
@@ -272,14 +326,73 @@ export function Canvas() {
     })
     setSelectedVersionIndex(Math.max(0, versions.length - 1))
   }, [nodes])
+
+  const startGenerateFirstNode = useCallback((prompt: string, options?: {
+    images?: NodeImage[]
+    attachments?: NodeAttachment[]
+  }) => {
+    const images = options?.images
+    const attachments = options?.attachments
+    const placeholderNodeId = createFirstNode('', false, prompt, images, attachments, '', true)
+    const run = (async () => {
+      try {
+        const result = await generateNode(prompt, images)
+        setNodes((nds) => {
+          const now = new Date().toISOString()
+          const nextNodes = nds.map((node) =>
+            node.id === placeholderNodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    content: result.content || '',
+                    thinking: result.thinking || '',
+                    question: prompt,
+                    isGenerating: false,
+                    updatedAt: now
+                  }
+                }
+              : node
+          )
+          return refreshNodeRuntimeData(nextNodes, edges)
+        })
+      } catch (error) {
+        setNodes((nds) => {
+          const now = new Date().toISOString()
+          const nextNodes = nds.map((node) =>
+            node.id === placeholderNodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    content: t('canvas.toast.firstNodeGenerateFailed'),
+                    thinking: '',
+                    question: prompt,
+                    isGenerating: false,
+                    updatedAt: now
+                  }
+                }
+              : node
+          )
+          return refreshNodeRuntimeData(nextNodes, edges)
+        })
+        throw error
+      }
+    })()
+
+    return { placeholderNodeId, run }
+  }, [createFirstNode, edges, refreshNodeRuntimeData, setNodes, t])
+
   const handleSaveNodeMeta = useCallback(() => {
     if (!metaEditor) return
     handleSaveNodeMetaRaw(metaEditor, () => setMetaEditor(null))
   }, [metaEditor, handleSaveNodeMetaRaw])
+
   const handleRestoreVersion = useCallback(() => {
     if (!versionDialog) return
     handleRestoreVersionRaw(versionDialog, selectedVersionIndex, () => setVersionDialog(null))
   }, [versionDialog, selectedVersionIndex, handleRestoreVersionRaw])
+
   const handleCreateFirstFromText = useCallback(() => {
     const text = initialInput.trim()
     if (!text) return
@@ -291,64 +404,90 @@ export function Canvas() {
     setInitialAttachments([])
     showToast(t('canvas.toast.firstNodeCreated'), 'success')
   }, [createFirstNode, initialInput, initialAttachments, initialImages, showToast, t])
+
   const handleGenerateFirstFromPrompt = useCallback(async () => {
     const prompt = initialInput.trim()
     if (!prompt) return
     const images = initialImages.length > 0 ? initialImages : undefined
     const attachments = initialAttachments.length > 0 ? initialAttachments : undefined
-    const placeholderNodeId = createFirstNode('', false, prompt, images, attachments, '', true)
+    const { run } = startGenerateFirstNode(prompt, { images, attachments })
     setInitialInput('')
     setInitialImages([])
     setInitialAttachments([])
     setInitialGenerating(true)
     try {
-      const result = await generateNode(prompt, images)
-      setNodes((nds) => {
-        const now = new Date().toISOString()
-        const nextNodes = nds.map((node) =>
-          node.id === placeholderNodeId
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  content: result.content || '',
-                  thinking: result.thinking || '',
-                  question: prompt,
-                  isGenerating: false,
-                  updatedAt: now
-                }
-              }
-            : node
-        )
-        return refreshNodeRuntimeData(nextNodes, edges)
-      })
+      await run
       showToast(t('canvas.toast.firstNodeGenerated'), 'success')
     } catch (error) {
       console.error(t('canvas.toast.firstNodeGenerateFailed'), error)
-      setNodes((nds) => {
-        const now = new Date().toISOString()
-        const nextNodes = nds.map((node) =>
-          node.id === placeholderNodeId
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  content: t('canvas.toast.firstNodeGenerateFailed'),
-                  thinking: '',
-                  question: prompt,
-                  isGenerating: false,
-                  updatedAt: now
-                }
-              }
-            : node
-        )
-        return refreshNodeRuntimeData(nextNodes, edges)
-      })
       showToast(t('canvas.toast.firstNodeGenerateFailed'), 'error')
     } finally {
       setInitialGenerating(false)
     }
-  }, [createFirstNode, edges, initialAttachments, initialInput, initialImages, refreshNodeRuntimeData, setNodes, showToast, t])
+  }, [initialAttachments, initialImages, initialInput, showToast, startGenerateFirstNode, t])
+
+  const handleSubmitChat = useCallback(async () => {
+    const text = chatDraft.trim()
+    if (!text || chatSubmitting || activeChatNodeGenerating) return
+
+    setChatDraft('')
+
+    const targetParentNodeId = chatBranchParentNodeId || conversationView.activeNodeId || conversationView.latestNodeId
+    if (!targetParentNodeId) {
+      setChatSubmitting(true)
+      const { placeholderNodeId, run } = startGenerateFirstNode(text)
+      setChatActiveNodeId(placeholderNodeId)
+      setChatBranchParentNodeId(null)
+      try {
+        await run
+      } catch (error) {
+        console.error(t('canvas.toast.firstNodeGenerateFailed'), error)
+        showToast(t('canvas.toast.firstNodeGenerateFailed'), 'error')
+      } finally {
+        setChatSubmitting(false)
+      }
+      return
+    }
+
+    const newNodeId = handleExpand(text, targetParentNodeId)
+    if (newNodeId) {
+      setChatActiveNodeId(newNodeId)
+    }
+    setChatBranchParentNodeId(null)
+  }, [
+    activeChatNodeGenerating,
+    chatBranchParentNodeId,
+    chatDraft,
+    chatSubmitting,
+    conversationView.activeNodeId,
+    conversationView.latestNodeId,
+    handleExpand,
+    showToast,
+    startGenerateFirstNode,
+    t
+  ])
+
+  const handleSwitchChatBranch = useCallback((branchNodeId: string) => {
+    const branchLeafNodeId = conversationView.resolveBranchLeafNodeId(branchNodeId)
+    setChatActiveNodeId(branchLeafNodeId)
+    setChatBranchParentNodeId(null)
+  }, [conversationView])
+
+  const handleOpenNewGraph = useCallback(() => {
+    handleNew()
+    setSurfaceMode('canvas')
+    setChatActiveNodeId(null)
+    setChatBranchParentNodeId(null)
+    setChatDraft('')
+  }, [handleNew])
+
+  const handleSurfaceModeChange = useCallback((mode: 'canvas' | 'chat') => {
+    setSurfaceMode(mode)
+    if (mode === 'chat' && !chatActiveNodeId) {
+      setChatActiveNodeId(conversationView.latestNodeId)
+    }
+  }, [chatActiveNodeId, conversationView.latestNodeId])
+
   const handleInitialImageUpload = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
@@ -357,6 +496,7 @@ export function Canvas() {
     })
     e.target.value = ''
   }, [])
+
   const handleInitialAttachmentUpload = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
@@ -373,6 +513,7 @@ export function Canvas() {
     })
     e.target.value = ''
   }, [showToast, t])
+
   const handleInitialInputPaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items
     if (!items) return
@@ -385,10 +526,20 @@ export function Canvas() {
       showToast(t('canvas.toast.pastedImages', { count: newImages.length }), 'success')
     })
   }, [showToast, t])
+
   return (
     <div className="w-screen h-screen flex flex-col bg-background">
-      <Toolbar onSave={handleSave} onLoad={handleLoad} onNew={handleNew} mode={canvasMode} onModeChange={setCanvasMode} />
-      <div className="flex-1 flex min-h-0">
+      <Toolbar
+        onSave={handleSave}
+        onLoad={handleLoad}
+        onNew={handleOpenNewGraph}
+        mode={canvasMode}
+        surfaceMode={surfaceMode}
+        onModeChange={setCanvasMode}
+        onSurfaceModeChange={handleSurfaceModeChange}
+      />
+
+      <div className={cn('flex-1 flex min-h-0', surfaceMode === 'chat' && 'hidden')}>
         <div ref={canvasRef} className={cn('flex-1 transition-all duration-300 relative min-h-0', detailPanel && 'flex-[2]')}>
           <div className="absolute inset-0 z-20">
             <CanvasFlow
@@ -519,6 +670,7 @@ export function Canvas() {
             onOpenMeta={openNodeMetaEditor}
             onOpenVersions={openVersionDialog}
             onExportNode={handleExportNode}
+            onOpenInChat={openChatFromNode}
             onClose={() => setContextMenu(null)}
             t={t}
           />
@@ -531,10 +683,33 @@ export function Canvas() {
           onStartResize={handleStartResize}
           onChangeFontSize={setDetailFontSize}
           onClose={() => setDetailPanel(null)}
+          onOpenInChat={openChatFromNode}
           onPreviewImage={setPreviewImage}
           t={t}
         />
       </div>
+
+      {surfaceMode === 'chat' && (
+        <ChatShell
+          turns={conversationView.turns}
+          nodeById={conversationView.nodeById}
+          activeNodeId={conversationView.activeNodeId}
+          latestNodeId={conversationView.latestNodeId}
+          branchParentNodeId={chatBranchParentNodeId}
+          draft={chatDraft}
+          isSubmitting={chatSubmitting}
+          disableSend={chatSubmitting || activeChatNodeGenerating}
+          onDraftChange={setChatDraft}
+          onSubmit={handleSubmitChat}
+          onCancelBranchParent={() => setChatBranchParentNodeId(null)}
+          onSelectBranchParent={setChatBranchParentNodeId}
+          onSwitchBranch={handleSwitchChatBranch}
+          onOpenInCanvas={handleOpenNodeInCanvas}
+          getNodePreviewLabel={conversationView.getNodePreviewLabel}
+          t={t}
+        />
+      )}
+
       <MetaEditorDialog
         metaEditor={metaEditor}
         onClose={() => setMetaEditor(null)}

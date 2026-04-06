@@ -1,4 +1,4 @@
-import { Download, Eye, History, Pencil, Plus, RefreshCw, Tags } from 'lucide-react'
+import { Download, Eye, History, MessageSquareText, Pencil, Plus, RefreshCw, Tags } from 'lucide-react'
 import { MenuItem } from '../MenuItem'
 import type { ContextMenuState } from '../../types/canvas'
 
@@ -10,6 +10,7 @@ interface CanvasContextMenuProps {
   onOpenMeta: (nodeId: string) => void
   onOpenVersions: (nodeId: string) => void
   onExportNode: (nodeId: string) => void
+  onOpenInChat: (nodeId: string) => void
   onClose: () => void
   t: (key: string, params?: Record<string, string | number>) => string
 }
@@ -22,6 +23,7 @@ export function CanvasContextMenu({
   onOpenMeta,
   onOpenVersions,
   onExportNode,
+  onOpenInChat,
   onClose,
   t
 }: CanvasContextMenuProps) {
@@ -84,6 +86,14 @@ export function CanvasContextMenu({
             label={t('canvas.menu.exportMarkdown')}
             onClick={() => {
               onExportNode(contextMenu.nodeId!)
+              onClose()
+            }}
+          />
+          <MenuItem
+            icon={<MessageSquareText className="w-4 h-4" />}
+            label={t('canvas.menu.openBranchChat')}
+            onClick={() => {
+              onOpenInChat(contextMenu.nodeId!)
               onClose()
             }}
           />

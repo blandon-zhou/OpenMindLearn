@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useGraphStore } from '../stores/graphStore'
-import { FileText, Save, FolderOpen, FilePlus, Settings, Eye, GraduationCap } from 'lucide-react'
+import { FileText, Save, FolderOpen, FilePlus, Settings, Eye, GraduationCap, MessageSquareText } from 'lucide-react'
 import { SettingsDialog } from './SettingsDialog'
 import type { CanvasMode } from '../types/canvas'
 import { useI18n } from '../hooks/useI18n'
@@ -10,10 +10,20 @@ interface ToolbarProps {
   onLoad: () => void
   onNew: () => void
   mode: CanvasMode
+  surfaceMode: 'canvas' | 'chat'
   onModeChange: (mode: CanvasMode) => void
+  onSurfaceModeChange: (mode: 'canvas' | 'chat') => void
 }
 
-export function Toolbar({ onSave, onLoad, onNew, mode, onModeChange }: ToolbarProps) {
+export function Toolbar({
+  onSave,
+  onLoad,
+  onNew,
+  mode,
+  surfaceMode,
+  onModeChange,
+  onSurfaceModeChange
+}: ToolbarProps) {
   const { fileName, isDirty, setFileName } = useGraphStore()
   const { t } = useI18n()
   const [isEditing, setIsEditing] = useState(false)
@@ -73,9 +83,12 @@ export function Toolbar({ onSave, onLoad, onNew, mode, onModeChange }: ToolbarPr
 
       <div className="absolute left-1/2 -translate-x-1/2 flex items-center p-1 rounded-lg border border-border bg-muted/40 gap-1">
         <button
-          onClick={() => onModeChange('learn')}
+          onClick={() => {
+            onModeChange('learn')
+            onSurfaceModeChange('canvas')
+          }}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${
-            mode === 'learn'
+            surfaceMode === 'canvas' && mode === 'learn'
               ? 'bg-background shadow-sm text-foreground border border-border'
               : 'text-muted-foreground hover:text-foreground hover:bg-accent'
           }`}
@@ -85,9 +98,24 @@ export function Toolbar({ onSave, onLoad, onNew, mode, onModeChange }: ToolbarPr
           {t('toolbar.mode.learn')}
         </button>
         <button
-          onClick={() => onModeChange('view')}
+          onClick={() => onSurfaceModeChange('chat')}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${
-            mode === 'view'
+            surfaceMode === 'chat'
+              ? 'bg-background shadow-sm text-foreground border border-border'
+              : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+          }`}
+          title={t('toolbar.surface.chat.title')}
+        >
+          <MessageSquareText className="w-4 h-4" />
+          {t('toolbar.surface.chat')}
+        </button>
+        <button
+          onClick={() => {
+            onModeChange('view')
+            onSurfaceModeChange('canvas')
+          }}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${
+            surfaceMode === 'canvas' && mode === 'view'
               ? 'bg-background shadow-sm text-foreground border border-border'
               : 'text-muted-foreground hover:text-foreground hover:bg-accent'
           }`}
