@@ -7,17 +7,22 @@ import {
   PREVIOUS_SYSTEM_PROMPT,
   PREVIOUS_THINK_TAG_SYSTEM_PROMPT
 } from './defaults'
-import type { LLMSettings, PromptTemplates } from './types'
+import type { PromptTemplates } from './types'
+
+interface LegacyPromptSettingsShape {
+  systemPrompt?: string
+  promptTemplates?: Partial<PromptTemplates>
+}
 
 function isLegacyValue(value: string | undefined, legacyValues: string[]): boolean {
   if (!value) return true
   return legacyValues.includes(value)
 }
 
-export function upgradeLegacyPromptDefaults(settings?: Partial<LLMSettings>): Partial<LLMSettings> {
+export function upgradeLegacyPromptDefaults<T extends LegacyPromptSettingsShape>(settings?: T): T | {} {
   if (!settings) return {}
 
-  const upgraded: Partial<LLMSettings> = { ...settings }
+  const upgraded: T = { ...settings }
   const promptTemplates: Partial<PromptTemplates> = settings.promptTemplates || {}
   const nextTemplates: Partial<PromptTemplates> = { ...promptTemplates }
 

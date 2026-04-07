@@ -3,6 +3,31 @@ import type { LocaleCode, LocaleMode } from '../../i18n/types'
 export type ExpandMode = 'direct' | 'targeted' | 'custom_context'
 export type ThemeMode = 'light' | 'dark'
 export type ApiStyle = 'openai_chat' | 'google_gemini' | 'anthropic' | 'openai_response'
+export type SecretProvider = 'os_keychain' | 'webcrypto'
+
+export interface LLMProfileConfig {
+  baseURL: string
+  model: string
+  apiStyle: ApiStyle
+  temperature: number
+  maxTokens: number
+}
+
+export interface LLMProfileSecret {
+  provider: SecretProvider
+  secretId: string
+  hasApiKey: boolean
+  updatedAt?: string
+}
+
+export interface LLMProfile {
+  id: string
+  name: string
+  config: LLMProfileConfig
+  secret: LLMProfileSecret
+  modelOptionsCache?: string[]
+  updatedAt: string
+}
 
 export interface PromptTemplates {
   directExpand: string
@@ -18,16 +43,17 @@ export interface LocalizedPromptConfig {
 }
 
 export interface LLMSettings {
-  apiKey: string
+  activeProfileId: string
+  profiles: LLMProfile[]
   baseURL: string
   model: string
   apiStyle: ApiStyle
-  promptLocale: LocaleCode
-  localizedPrompts: Record<LocaleCode, LocalizedPromptConfig>
-  answerAnchorKeywords: string[]
   temperature: number
   maxTokens: number
   contextMaxDepth: number
+  promptLocale: LocaleCode
+  localizedPrompts: Record<LocaleCode, LocalizedPromptConfig>
+  answerAnchorKeywords: string[]
   systemPrompt: string
   promptTemplates: PromptTemplates
 }
@@ -42,6 +68,13 @@ export interface SettingsStore {
   llmSettings: LLMSettings
   uiSettings: UISettings
   updateLLMSettings: (settings: Partial<LLMSettings>) => void
+  createLLMProfile: (name?: string) => string
+  renameLLMProfile: (profileId: string, name: string) => void
+  deleteLLMProfile: (profileId: string) => void
+  setActiveLLMProfile: (profileId: string) => void
+  updateLLMProfileConfig: (profileId: string, config: Partial<LLMProfileConfig>) => void
+  updateLLMProfileSecret: (profileId: string, secret: Partial<LLMProfileSecret>) => void
+  setLLMProfileModelOptionsCache: (profileId: string, models: string[]) => void
   updateUISettings: (settings: Partial<UISettings>) => void
   setTheme: (theme: ThemeMode) => void
   setLocaleMode: (mode: LocaleMode) => void

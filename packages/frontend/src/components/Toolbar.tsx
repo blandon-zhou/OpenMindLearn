@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useGraphStore } from '../stores/graphStore'
 import { FileText, Save, FolderOpen, FilePlus, Settings, Eye, GraduationCap, MessageSquareText } from 'lucide-react'
 import { SettingsDialog } from './SettingsDialog'
+import { ProfileSwitcher } from './ProfileSwitcher'
 import type { CanvasMode } from '../types/canvas'
 import { useI18n } from '../hooks/useI18n'
 
@@ -128,6 +129,7 @@ export function Toolbar({
 
       {/* 右侧：操作按钮 */}
       <div className="flex items-center gap-2">
+        <ProfileSwitcher />
         <button
           onClick={() => setShowSettings(true)}
           className="flex items-center gap-2 px-3 py-1.5 hover:bg-accent rounded text-sm"

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, safeStorage } = require('electron')
 const path = require('path')
 const { spawn } = require('child_process')
 const net = require('net')
@@ -16,6 +16,93 @@ let appIsQuitting = false
 function ensureOmlExtension(filePath) {
   if (typeof filePath !== 'string' || !filePath.trim()) return ''
   return filePath.toLowerCase().endsWith('.oml') ? filePath : `${filePath}.oml`
+}
+
+function getSecretStoreFilePath() {
+  return path.join(app.getPath('userData'), 'secure-secrets.json')
+}
+
+async function readSecretStore() {
+  const filePath = getSecretStoreFilePath()
+  try {
+    const raw = await fs.promises.readFile(filePath, 'utf8')
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    return parsed
+  } catch {
+    return {}
+  }
+}
+
+async function writeSecretStore(store) {
+  const filePath = getSecretStoreFilePath()
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
+  await fs.promises.writeFile(filePath, JSON.stringify(store, null, 2), { mode: 0o600 })
+}
+
+function assertEncryptionAvailable() {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('OS encryption is unavailable')
+  }
+}
+
+function encryptSecret(plaintext) {
+  assertEncryptionAvailable()
+  return safeStorage.encryptString(plaintext).toString('base64')
+}
+
+function decryptSecret(ciphertext) {
+  assertEncryptionAvailable()
+  const buffer = Buffer.from(ciphertext, 'base64')
+  return safeStorage.decryptString(buffer)
+}
+
+function registerSecretIpcHandlers() {
+  ipcMain.handle('oml:secret:get', async (_event, secretId) => {
+    if (typeof secretId !== 'string' || !secretId.trim()) {
+      throw new Error('Invalid secret id')
+    }
+
+    const store = await readSecretStore()
+    const record = store[secretId]
+    if (!record || typeof record.ciphertext !== 'string' || !record.ciphertext) {
+      return null
+    }
+
+    try {
+      return decryptSecret(record.ciphertext)
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('oml:secret:set', async (_event, secretId, plaintext) => {
+    if (typeof secretId !== 'string' || !secretId.trim()) {
+      throw new Error('Invalid secret id')
+    }
+    if (typeof plaintext !== 'string' || !plaintext.trim()) {
+      throw new Error('Invalid secret value')
+    }
+
+    const store = await readSecretStore()
+    store[secretId] = {
+      ciphertext: encryptSecret(plaintext.trim()),
+      updatedAt: new Date().toISOString()
+    }
+    await writeSecretStore(store)
+  })
+
+  ipcMain.handle('oml:secret:remove', async (_event, secretId) => {
+    if (typeof secretId !== 'string' || !secretId.trim()) {
+      throw new Error('Invalid secret id')
+    }
+
+    const store = await readSecretStore()
+    if (store[secretId]) {
+      delete store[secretId]
+      await writeSecretStore(store)
+    }
+  })
 }
 
 function registerFileIpcHandlers() {
@@ -202,6 +289,7 @@ function createMainWindow() {
 app.whenReady().then(async () => {
   try {
     registerFileIpcHandlers()
+    registerSecretIpcHandlers()
     await startBackendIfNeeded()
     createMainWindow()
 

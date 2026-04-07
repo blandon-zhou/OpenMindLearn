@@ -3,9 +3,13 @@ export { useSettingsStore } from './settings'
 export type {
   ApiStyle,
   ExpandMode,
+  LLMProfile,
+  LLMProfileConfig,
+  LLMProfileSecret,
   LLMSettings,
   LocalizedPromptConfig,
   PromptTemplates,
+  SecretProvider,
   SettingsStore,
   ThemeMode,
   UISettings

@@ -3,14 +3,14 @@ import { ReactFlowProvider } from '@xyflow/react'
 import { Canvas } from './components/Canvas'
 import { Toast } from './components/Toast'
 import { useSettingsStore } from './stores/settingsStore'
-import { updateLLMConfig } from './services/api'
+import { syncActiveProfileToRuntime } from './services/profileRuntime'
 import { tFromSettings } from './hooks/useI18n'
 
 function LLMSettingsSync() {
-  const { llmSettings } = useSettingsStore()
+  const llmSettings = useSettingsStore((state) => state.llmSettings)
 
   useEffect(() => {
-    updateLLMConfig(llmSettings).catch((error) => {
+    syncActiveProfileToRuntime(llmSettings).catch((error) => {
       console.error(tFromSettings('app.syncLLMFailed'), error)
     })
   }, [llmSettings])
