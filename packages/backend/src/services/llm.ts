@@ -3,6 +3,7 @@ export {
   generateContent,
   generateWithContext,
   getLLMConfig,
+  listAvailableModels,
   setLLMConfig
 } from './llm/index.js'
 

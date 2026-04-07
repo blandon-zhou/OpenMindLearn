@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   DEFAULT_ANSWER_ANCHOR_KEYWORDS_BY_LOCALE,
   DEFAULT_PROMPT_TEMPLATES_BY_LOCALE,
@@ -8,7 +8,7 @@ import {
   useSettingsStore
 } from '../stores/settingsStore'
 import type { LocaleCode, LocaleMode } from '../i18n/types'
-import { updateLLMConfig } from '../services/api'
+import { listAvailableModels, updateLLMConfig } from '../services/api'
 import { useToastStore } from '../stores/toastStore'
 import { Moon, Sun, X } from 'lucide-react'
 import { useI18n } from '../hooks/useI18n'
@@ -50,6 +50,53 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [contextEnvelopePrompt, setContextEnvelopePrompt] = useState(llmSettings.promptTemplates.contextEnvelope)
   const [themeMode, setThemeMode] = useState<ThemeMode>(uiSettings.theme)
   const [localeMode, setLocaleModeState] = useState<LocaleMode>(uiSettings.localeMode)
+  const [modelOptions, setModelOptions] = useState<string[]>([])
+  const [isLoadingModels, setIsLoadingModels] = useState(false)
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
+  const [activeModelIndex, setActiveModelIndex] = useState(0)
+  const modelPickerRef = useRef<HTMLDivElement | null>(null)
+
+  const filteredModelOptions = useMemo(() => {
+    const keyword = model.trim().toLowerCase()
+    if (!keyword) return modelOptions
+    return modelOptions.filter((item) => item.toLowerCase().includes(keyword))
+  }, [model, modelOptions])
+
+  const loadModelOptions = async (
+    config?: Partial<{ apiKey: string; baseURL: string; apiStyle: ApiStyle }>,
+    silent: boolean = false
+  ) => {
+    const nextApiKey = (config?.apiKey ?? apiKey).trim()
+    const nextBaseURL = (config?.baseURL ?? baseURL).trim()
+    const nextApiStyle = config?.apiStyle ?? apiStyle
+
+    if (!nextApiKey || !nextBaseURL) {
+      if (!silent) showToast(t('settings.toast.modelsNeedConfig'), 'error')
+      return
+    }
+
+    setIsLoadingModels(true)
+    try {
+      const result = await listAvailableModels({
+        apiKey: nextApiKey,
+        baseURL: nextBaseURL,
+        apiStyle: nextApiStyle
+      })
+      const models = Array.from(new Set((result.models || []).map((item) => item.trim()).filter(Boolean)))
+      setModelOptions(models)
+      setActiveModelIndex(0)
+      if (!silent) {
+        showToast(t('settings.toast.modelsLoaded', { count: models.length }), 'success')
+      }
+    } catch (error) {
+      if (!silent) {
+        const message = error instanceof Error ? error.message : t('settings.toast.modelsLoadUnknown')
+        showToast(t('settings.toast.modelsLoadFailed', { message }), 'error')
+      }
+    } finally {
+      setIsLoadingModels(false)
+    }
+  }
 
   const syncPromptFieldsByLocale = (locale: LocaleCode) => {
     const localized = getLocalePromptConfig(llmSettings, locale)
@@ -75,7 +122,38 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     syncPromptFieldsByLocale(llmSettings.promptLocale)
     setThemeMode(uiSettings.theme)
     setLocaleModeState(uiSettings.localeMode)
+    setModelOptions([])
+    setIsModelDropdownOpen(false)
+    setActiveModelIndex(0)
+    void loadModelOptions({
+      apiKey: llmSettings.apiKey,
+      baseURL: llmSettings.baseURL,
+      apiStyle: llmSettings.apiStyle
+    }, true)
   }, [llmSettings, open, uiSettings.theme, uiSettings.localeMode])
+
+  useEffect(() => {
+    if (!open || !isModelDropdownOpen) return
+
+    const handleDocumentMouseDown = (event: MouseEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (!modelPickerRef.current?.contains(target)) {
+        setIsModelDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleDocumentMouseDown)
+    return () => {
+      document.removeEventListener('mousedown', handleDocumentMouseDown)
+    }
+  }, [isModelDropdownOpen, open])
+
+  useEffect(() => {
+    if (activeModelIndex >= filteredModelOptions.length) {
+      setActiveModelIndex(0)
+    }
+  }, [activeModelIndex, filteredModelOptions.length])
 
   if (!open) return null
 
@@ -95,6 +173,11 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const handlePromptLocaleChange = (nextLocale: LocaleCode) => {
     setPromptLocale(nextLocale)
     syncPromptFieldsByLocale(nextLocale)
+  }
+
+  const selectModelOption = (value: string) => {
+    setModel(value)
+    setIsModelDropdownOpen(false)
   }
 
   const handleSave = async () => {
@@ -218,14 +301,101 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">{t('settings.model')}</label>
-                  <input
-                    type="text"
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    placeholder="Gemini-3.1-Pro"
-                  />
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-sm font-medium">{t('settings.model')}</label>
+                    <button
+                      type="button"
+                      onClick={() => void loadModelOptions()}
+                      className={RESET_BUTTON_CLASS}
+                      disabled={isLoadingModels}
+                    >
+                      {isLoadingModels ? t('settings.model.fetching') : t('settings.model.fetch')}
+                    </button>
+                  </div>
+                  <div ref={modelPickerRef} className="relative">
+                    <input
+                      type="text"
+                      value={model}
+                      onFocus={() => setIsModelDropdownOpen(true)}
+                      onChange={(e) => {
+                        setModel(e.target.value)
+                        setActiveModelIndex(0)
+                        setIsModelDropdownOpen(true)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setIsModelDropdownOpen(false)
+                          return
+                        }
+
+                        if (filteredModelOptions.length === 0) {
+                          if (e.key === 'ArrowDown') {
+                            setIsModelDropdownOpen(true)
+                          }
+                          return
+                        }
+
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault()
+                          setIsModelDropdownOpen(true)
+                          setActiveModelIndex((prev) => (prev + 1) % filteredModelOptions.length)
+                          return
+                        }
+
+                        if (e.key === 'ArrowUp') {
+                          e.preventDefault()
+                          setIsModelDropdownOpen(true)
+                          setActiveModelIndex((prev) => (prev - 1 + filteredModelOptions.length) % filteredModelOptions.length)
+                          return
+                        }
+
+                        if (e.key === 'Enter' && isModelDropdownOpen) {
+                          e.preventDefault()
+                          const active = filteredModelOptions[activeModelIndex]
+                          if (active) selectModelOption(active)
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      placeholder="Gemini-3.1-Pro"
+                    />
+                    {isModelDropdownOpen && (
+                      <div className="absolute z-20 mt-1 w-full rounded-md border border-border bg-background shadow-lg">
+                        <div className="px-3 py-1.5 text-xs text-muted-foreground border-b border-border">
+                          {t('settings.model.filtered', {
+                            shown: filteredModelOptions.length,
+                            total: modelOptions.length
+                          })}
+                        </div>
+                        <div className="max-h-56 overflow-auto">
+                          {filteredModelOptions.length === 0 ? (
+                            <div className="px-3 py-2 text-sm text-muted-foreground">
+                              {t('settings.model.noMatch')}
+                            </div>
+                          ) : (
+                            filteredModelOptions.map((item, index) => (
+                              <button
+                                key={item}
+                                type="button"
+                                onClick={() => selectModelOption(item)}
+                                className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                                  index === activeModelIndex
+                                    ? 'bg-accent text-foreground'
+                                    : 'text-foreground hover:bg-accent/60'
+                                }`}
+                              >
+                                {item}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {modelOptions.length > 0
+                      ? t('settings.model.loaded', { count: modelOptions.length })
+                      : t('settings.model.help')}
+                  </p>
                 </div>
 
                 <div>

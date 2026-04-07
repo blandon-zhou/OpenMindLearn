@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify'
-import { buildExpandPrompt, generateContent, generateWithContext, getLLMConfig, setLLMConfig, type ApiStyle } from '../services/llm.js'
+import { buildExpandPrompt, generateContent, generateWithContext, getLLMConfig, listAvailableModels, setLLMConfig, type ApiStyle } from '../services/llm.js'
 import { buildContextChain, generateContextXml } from '../services/contextService.js'
 import { Node, SourceReference, NodeImage } from '../types/index.js'
 
@@ -83,5 +83,21 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     }
     setLLMConfig({ apiKey, baseURL, model, apiStyle, answerAnchorKeywords, temperature, maxTokens, contextMaxDepth, systemPrompt, promptTemplates })
     return { success: true }
+  })
+
+  fastify.post('/api/config/models', async (request, reply) => {
+    const { apiKey, baseURL, apiStyle } = request.body as {
+      apiKey?: string
+      baseURL?: string
+      apiStyle?: ApiStyle
+    }
+
+    try {
+      const models = await listAvailableModels({ apiKey, baseURL, apiStyle })
+      return { models }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '获取模型列表失败'
+      return reply.code(400).send({ error: message })
+    }
   })
 }

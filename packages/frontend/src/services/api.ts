@@ -79,3 +79,16 @@ export async function updateLLMConfig(config: {
   })
   return parseJsonOrThrow(res)
 }
+
+export async function listAvailableModels(config: {
+  apiKey: string
+  baseURL: string
+  apiStyle: ApiStyle
+}) {
+  const res = await fetch(`${API_BASE}/config/models`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config)
+  })
+  return parseJsonOrThrow(res) as Promise<{ models: string[] }>
+}

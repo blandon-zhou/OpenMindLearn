@@ -7,10 +7,12 @@ import { getLLMConfig, getResolvedConfig, setLLMConfig } from './config.js'
 import { buildContextPromptFromTemplates, buildExpandPromptFromTemplates } from './prompts.js'
 import { extractErrorMessage, parseResponseJson } from './transport.js'
 import type { AnthropicMessageResponse, ChatCompletionResponse, ExpandMode, GeneratedAnswer, GoogleGenerateResponse, ApiStyle, PromptTemplates } from './types.js'
+import { listAvailableModels } from './models.js'
 
 export type { ExpandMode, ApiStyle, PromptTemplates, GeneratedAnswer }
 
 export { setLLMConfig, getLLMConfig }
+export { listAvailableModels }
 
 export function buildExpandPrompt(text: string, mode: ExpandMode = 'direct'): string {
   const cfg = getResolvedConfig()
