@@ -2,6 +2,7 @@ import { DEFAULT_ANSWER_ANCHOR_KEYWORDS, DEFAULT_PROMPT_TEMPLATES, DEFAULT_SYSTE
 import type { ApiStyle, PromptTemplates, ResolvedConfig, RuntimeConfig } from './types.js'
 
 let runtimeConfig: RuntimeConfig = {}
+const UNBOUNDED_MAX_TOKENS = Number.MAX_SAFE_INTEGER
 
 function parseNumber(input: unknown): number | undefined {
   if (typeof input === 'number' && Number.isFinite(input)) return input
@@ -100,7 +101,7 @@ export function getResolvedConfig(): ResolvedConfig {
   const maxTokens = clamp(
     runtimeConfig.maxTokens ?? envMaxTokens ?? 4096,
     1,
-    32000,
+    UNBOUNDED_MAX_TOKENS,
     true
   )
   const contextMaxDepth = clamp(
@@ -142,7 +143,7 @@ export function setLLMConfig(config: RuntimeConfig) {
 
   const parsedMaxTokens = parseNumber(config.maxTokens)
   if (parsedMaxTokens !== undefined) {
-    nextConfig.maxTokens = clamp(parsedMaxTokens, 1, 32000, true)
+    nextConfig.maxTokens = clamp(parsedMaxTokens, 1, UNBOUNDED_MAX_TOKENS, true)
   }
 
   const parsedContextDepth = parseNumber(config.contextMaxDepth)

@@ -29,6 +29,7 @@ interface LegacyLLMSettingsLike {
 
 const DEFAULT_TEMPERATURE = 0.7
 const DEFAULT_MAX_TOKENS = 4096
+const UNBOUNDED_MAX_TOKENS = Number.MAX_SAFE_INTEGER
 const DEFAULT_CONTEXT_MAX_DEPTH = 10
 
 function clamp(value: number, min: number, max: number, integer = false): number {
@@ -126,7 +127,7 @@ export function normalizeLLMProfileConfig(source?: Partial<LLMProfileConfig>): L
     model: (source?.model || '').trim(),
     apiStyle: normalizeApiStyle(source?.apiStyle),
     temperature: normalizeNumber(source?.temperature, DEFAULT_TEMPERATURE, 0, 2),
-    maxTokens: normalizeNumber(source?.maxTokens, DEFAULT_MAX_TOKENS, 1, 32000, true)
+    maxTokens: normalizeNumber(source?.maxTokens, DEFAULT_MAX_TOKENS, 1, UNBOUNDED_MAX_TOKENS, true)
   }
 }
 

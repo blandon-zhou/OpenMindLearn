@@ -32,6 +32,9 @@ export function buildOpenAIChatPayload(
       model: cfg.model,
       temperature: cfg.temperature,
       max_tokens: cfg.maxTokens,
+      // Some OpenAI-compatible gateways/models only honor one of these fields.
+      max_completion_tokens: cfg.maxTokens,
+      max_output_tokens: cfg.maxTokens,
       messages: [
         {
           role: 'system',

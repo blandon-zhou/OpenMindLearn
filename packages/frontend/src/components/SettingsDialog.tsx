@@ -9,7 +9,7 @@ import {
 } from '../stores/settingsStore'
 import type { LocaleCode, LocaleMode } from '../i18n/types'
 import { fetchProfileModels, getLLMProfileById, syncProfileToRuntime } from '../services/profileRuntime'
-import { removeSecret, setSecret } from '../services/secureSecret'
+import { getSecret, removeSecret, setSecret } from '../services/secureSecret'
 import { useToastStore } from '../stores/toastStore'
 import { Moon, Plus, Sun, Trash2, X } from 'lucide-react'
 import { useI18n } from '../hooks/useI18n'
@@ -20,6 +20,7 @@ interface SettingsDialogProps {
 }
 
 const RESET_BUTTON_CLASS = 'px-2.5 py-1 text-xs rounded border border-border hover:bg-accent text-muted-foreground hover:text-foreground transition-colors'
+const UNBOUNDED_MAX_TOKENS = Number.MAX_SAFE_INTEGER
 
 function getLocalePromptConfig(llmSettings: ReturnType<typeof useSettingsStore.getState>['llmSettings'], locale: LocaleCode) {
   return llmSettings.localizedPrompts[locale] || {
@@ -71,9 +72,13 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [modelOptions, setModelOptions] = useState<string[]>([])
   const [isLoadingModels, setIsLoadingModels] = useState(false)
   const [isModelLibraryOpen, setIsModelLibraryOpen] = useState(false)
+  const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false)
+  const [profileSearchKeyword, setProfileSearchKeyword] = useState('')
   const [modelSearchKeyword, setModelSearchKeyword] = useState('')
   const [isSaving, setIsSaving] = useState(false)
-  const [isSwitchingProfile, setIsSwitchingProfile] = useState(false)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [switchingProfileId, setSwitchingProfileId] = useState('')
+  const [resolvedSecretHasApiKey, setResolvedSecretHasApiKey] = useState<boolean | null>(null)
 
   const selectedProfile = useMemo(() => {
     return llmSettings.profiles.find((profile) => profile.id === selectedProfileId) || llmSettings.profiles[0]
@@ -84,6 +89,21 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     if (!keyword) return modelOptions
     return modelOptions.filter((item) => item.toLowerCase().includes(keyword))
   }, [modelOptions, modelSearchKeyword])
+
+  const filteredProfiles = useMemo(() => {
+    const keyword = profileSearchKeyword.trim().toLowerCase()
+    if (!keyword) return llmSettings.profiles
+
+    return llmSettings.profiles.filter((profile) => {
+      const haystack = [
+        profile.name,
+        profile.config.model,
+        profile.config.apiStyle,
+        profile.config.baseURL
+      ].join(' ')
+      return haystack.toLowerCase().includes(keyword)
+    })
+  }, [llmSettings.profiles, profileSearchKeyword])
 
   const syncPromptFieldsByLocale = (locale: LocaleCode) => {
     const localized = getLocalePromptConfig(llmSettings, locale)
@@ -105,26 +125,61 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     syncPromptFieldsByLocale(llmSettings.promptLocale)
     setThemeMode(uiSettings.theme)
     setLocaleModeState(uiSettings.localeMode)
+    setIsProfileEditorOpen(false)
     setIsModelLibraryOpen(false)
+    setSwitchingProfileId('')
+    setProfileSearchKeyword('')
     setModelSearchKeyword('')
   }, [open, llmSettings.activeProfileId, llmSettings.promptLocale, llmSettings.contextMaxDepth, uiSettings.theme, uiSettings.localeMode])
 
   useEffect(() => {
-    if (!open || !selectedProfile) return
+    if (!open) return
+    const profile = getLLMProfileById(llmSettings, selectedProfileId)
+      || llmSettings.profiles[0]
+    if (!profile) return
 
-    setProfileNameInput(selectedProfile.name)
+    setProfileNameInput(profile.name)
     setApiKeyInput('')
     setClearApiKeyOnSave(false)
-    setBaseURL(selectedProfile.config.baseURL)
-    setModel(selectedProfile.config.model)
-    setApiStyle(selectedProfile.config.apiStyle)
-    setTemperature(String(selectedProfile.config.temperature))
-    setMaxTokens(String(selectedProfile.config.maxTokens))
-    setModelOptions(selectedProfile.modelOptionsCache || [])
-    setModelSearchKeyword(selectedProfile.config.model)
-  }, [open, selectedProfile])
+    setBaseURL(profile.config.baseURL)
+    setModel(profile.config.model)
+    setApiStyle(profile.config.apiStyle)
+    setTemperature(String(profile.config.temperature))
+    setMaxTokens(String(profile.config.maxTokens))
+    setModelOptions(profile.modelOptionsCache || [])
+    setModelSearchKeyword(profile.config.model)
+  }, [open, selectedProfileId])
+
+  useEffect(() => {
+    if (!open) return
+    const profile = getLLMProfileById(llmSettings, selectedProfileId)
+      || llmSettings.profiles[0]
+    if (!profile) return
+
+    let cancelled = false
+    setResolvedSecretHasApiKey(null)
+
+    void (async () => {
+      const hasApiKey = Boolean((await getSecret(profile.secret.secretId))?.trim())
+      if (cancelled) return
+
+      setResolvedSecretHasApiKey(hasApiKey)
+      if (profile.secret.hasApiKey !== hasApiKey) {
+        updateLLMProfileSecret(profile.id, {
+          hasApiKey,
+          updatedAt: new Date().toISOString()
+        })
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, selectedProfileId])
 
   if (!open || !selectedProfile) return null
+
+  const hasStoredApiKey = resolvedSecretHasApiKey ?? selectedProfile.secret.hasApiKey
 
   const parseNumber = (
     value: string,
@@ -162,7 +217,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
       return
     }
 
-    if (!apiKeyInput.trim() && !selectedProfile.secret.hasApiKey) {
+    if (!apiKeyInput.trim() && !hasStoredApiKey) {
       if (!silent) showToast(t('settings.toast.modelsNeedConfig'), 'error')
       return
     }
@@ -189,20 +244,16 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const handleCreateProfile = () => {
     const createdId = createLLMProfile()
     setSelectedProfileId(createdId)
+    setIsProfileEditorOpen(true)
     showToast(t('settings.toast.profileCreated'), 'success')
   }
 
-  const handleRenameProfile = () => {
-    const nextName = profileNameInput.trim()
-    if (!nextName) {
-      showToast(t('settings.toast.profileNameRequired'), 'error')
-      return
-    }
-    renameLLMProfile(selectedProfile.id, nextName)
-    showToast(t('settings.toast.profileRenamed'), 'success')
+  const handleOpenProfileEditor = (profileId: string) => {
+    setSelectedProfileId(profileId)
+    setIsProfileEditorOpen(true)
   }
 
-  const handleDeleteProfile = () => {
+  const handleDeleteProfile = (profileId: string) => {
     if (llmSettings.profiles.length <= 1) {
       showToast(t('settings.toast.profileDeleteLastBlocked'), 'error')
       return
@@ -211,7 +262,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     const confirmed = window.confirm(t('settings.profile.deleteConfirm'))
     if (!confirmed) return
 
-    const deletingId = selectedProfile.id
+    const deletingId = profileId
     deleteLLMProfile(deletingId)
 
     const nextState = useSettingsStore.getState().llmSettings
@@ -219,23 +270,111 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     if (fallbackSelected) {
       setSelectedProfileId(fallbackSelected.id)
     }
+    if (selectedProfileId === deletingId) {
+      setIsProfileEditorOpen(false)
+    }
 
     showToast(t('settings.toast.profileDeleted'), 'success')
   }
 
-  const handleActivateSelectedProfile = async () => {
-    if (selectedProfile.id === llmSettings.activeProfileId) return
+  const handleActivateProfile = async (profileId: string) => {
+    if (profileId === llmSettings.activeProfileId) return
+    const profile = getLLMProfileById(llmSettings, profileId)
+    if (!profile) return
 
-    setIsSwitchingProfile(true)
+    setSwitchingProfileId(profileId)
     try {
-      await syncProfileToRuntime(llmSettings, selectedProfile)
-      setActiveLLMProfile(selectedProfile.id)
-      showToast(t('settings.toast.profileActivated', { name: selectedProfile.name }), 'success')
+      await syncProfileToRuntime(llmSettings, profile)
+      setActiveLLMProfile(profile.id)
+      showToast(t('settings.toast.profileActivated', { name: profile.name }), 'success')
     } catch (error) {
       const message = error instanceof Error ? error.message : t('settings.toast.modelsLoadUnknown')
       showToast(t('settings.toast.profileActivateFailed', { message }), 'error')
     } finally {
-      setIsSwitchingProfile(false)
+      setSwitchingProfileId('')
+    }
+  }
+
+  const handleSaveProfile = async () => {
+    if (!selectedProfile) return
+    const nextName = profileNameInput.trim()
+
+    setIsSavingProfile(true)
+
+    const nextTemperature = parseNumber(temperature, selectedProfile.config.temperature, 0, 2)
+    const nextMaxTokens = parseNumber(maxTokens, selectedProfile.config.maxTokens, 1, UNBOUNDED_MAX_TOKENS, true)
+    const nextBaseURL = baseURL.trim()
+    const nextModel = model.trim()
+
+    if (nextName && nextName !== selectedProfile.name) {
+      renameLLMProfile(selectedProfile.id, nextName)
+      showToast(t('settings.toast.profileRenamed'), 'success')
+    }
+
+    updateLLMProfileConfig(selectedProfile.id, {
+      baseURL: nextBaseURL,
+      model: nextModel,
+      apiStyle,
+      temperature: nextTemperature,
+      maxTokens: nextMaxTokens
+    })
+
+    try {
+      const hasFreshApiKey = apiKeyInput.trim().length > 0
+      const shouldClear = clearApiKeyOnSave && !hasFreshApiKey
+
+      if (shouldClear) {
+        await removeSecret(selectedProfile.secret.secretId)
+      }
+
+      let provider = selectedProfile.secret.provider
+      if (hasFreshApiKey) {
+        provider = await setSecret(selectedProfile.secret.secretId, apiKeyInput.trim())
+      }
+
+      const nextHasApiKey = shouldClear ? false : hasStoredApiKey || hasFreshApiKey
+
+      updateLLMProfileSecret(selectedProfile.id, {
+        provider,
+        hasApiKey: nextHasApiKey,
+        updatedAt: new Date().toISOString()
+      })
+      setResolvedSecretHasApiKey(nextHasApiKey)
+
+      setLLMProfileModelOptionsCache(selectedProfile.id, modelOptions)
+
+      const nextSettings = useSettingsStore.getState().llmSettings
+      const nextSelectedProfile = getLLMProfileById(nextSettings, selectedProfile.id)
+      const shouldSyncRuntime = nextSelectedProfile && nextSettings.activeProfileId === selectedProfile.id
+
+      let runtimeSyncErrorMessage = ''
+      if (shouldSyncRuntime && nextSelectedProfile) {
+        try {
+          await syncProfileToRuntime(nextSettings, nextSelectedProfile)
+        } catch (error) {
+          runtimeSyncErrorMessage = error instanceof Error ? error.message : t('settings.toast.modelsLoadUnknown')
+          if (runtimeSyncErrorMessage.includes('API Key is missing')) {
+            updateLLMProfileSecret(selectedProfile.id, {
+              hasApiKey: false,
+              updatedAt: new Date().toISOString()
+            })
+            setResolvedSecretHasApiKey(false)
+          }
+        }
+      }
+
+      setApiKeyInput('')
+      setClearApiKeyOnSave(false)
+      setIsProfileEditorOpen(false)
+      showToast(t('settings.toast.saved'), 'success')
+      if (runtimeSyncErrorMessage) {
+        showToast(`${t('settings.toast.localSavedRemoteFailed')}: ${runtimeSyncErrorMessage}`, 'error')
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('settings.toast.modelsLoadUnknown')
+      showToast(t('settings.toast.saveFailed', { message }), 'error')
+    } finally {
+      setIsSavingProfile(false)
     }
   }
 
@@ -243,8 +382,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     if (!selectedProfile) return
     setIsSaving(true)
 
-    const nextTemperature = parseNumber(temperature, selectedProfile.config.temperature, 0, 2)
-    const nextMaxTokens = parseNumber(maxTokens, selectedProfile.config.maxTokens, 1, 32000, true)
     const nextContextMaxDepth = parseNumber(contextMaxDepth, llmSettings.contextMaxDepth, 1, 50, true)
     const nextAnswerAnchorKeywords = answerAnchorKeywordsText
       .split(/[\r\n,，]+/)
@@ -264,56 +401,16 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
       contextEnvelope: contextEnvelopePrompt.trim() || DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].contextEnvelope
     }
 
-    const nextBaseURL = baseURL.trim()
-    const nextModel = model.trim()
-
-    updateLLMProfileConfig(selectedProfile.id, {
-      baseURL: nextBaseURL,
-      model: nextModel,
-      apiStyle,
-      temperature: nextTemperature,
-      maxTokens: nextMaxTokens
-    })
-
-    updateLLMSettings({
-      promptLocale,
-      contextMaxDepth: nextContextMaxDepth,
-      answerAnchorKeywords: resolvedAnswerAnchorKeywords,
-      systemPrompt: nextSystemPrompt,
-      promptTemplates: nextPromptTemplates
-    })
-    setTheme(themeMode)
-    setLocaleMode(localeMode)
-
     try {
-      const hasFreshApiKey = apiKeyInput.trim().length > 0
-      const shouldClear = clearApiKeyOnSave && !hasFreshApiKey
-
-      if (shouldClear) {
-        await removeSecret(selectedProfile.secret.secretId)
-      }
-
-      let provider = selectedProfile.secret.provider
-      if (hasFreshApiKey) {
-        provider = await setSecret(selectedProfile.secret.secretId, apiKeyInput.trim())
-      }
-
-      updateLLMProfileSecret(selectedProfile.id, {
-        provider,
-        hasApiKey: shouldClear ? false : selectedProfile.secret.hasApiKey || hasFreshApiKey,
-        updatedAt: new Date().toISOString()
+      updateLLMSettings({
+        promptLocale,
+        contextMaxDepth: nextContextMaxDepth,
+        answerAnchorKeywords: resolvedAnswerAnchorKeywords,
+        systemPrompt: nextSystemPrompt,
+        promptTemplates: nextPromptTemplates
       })
-
-      setLLMProfileModelOptionsCache(selectedProfile.id, modelOptions)
-
-      const nextSettings = useSettingsStore.getState().llmSettings
-      const nextSelectedProfile = getLLMProfileById(nextSettings, selectedProfile.id)
-      const shouldSyncRuntime = nextSelectedProfile && nextSettings.activeProfileId === selectedProfile.id
-
-      if (shouldSyncRuntime && nextSelectedProfile) {
-        await syncProfileToRuntime(nextSettings, nextSelectedProfile)
-      }
-
+      setTheme(themeMode)
+      setLocaleMode(localeMode)
       showToast(t('settings.toast.saved'), 'success')
       onClose()
     } catch (error) {
@@ -363,205 +460,105 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
         <div className="space-y-5">
           {activeTab === 'llm' && (
-            <>
-              <div className="rounded border border-border p-3 space-y-3">
-                <div className="text-sm font-medium">{t('settings.profile.section')}</div>
-                <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
-                  <select
-                    value={selectedProfile.id}
-                    onChange={(e) => setSelectedProfileId(e.target.value)}
-                    className="px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    {llmSettings.profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}{profile.id === llmSettings.activeProfileId ? ` (${t('common.current')})` : ''}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={handleCreateProfile}
-                    className="px-3 py-2 border border-border rounded hover:bg-accent text-sm inline-flex items-center gap-1"
-                  >
-                    <Plus className="w-4 h-4" />
-                    {t('settings.profile.create')}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleDeleteProfile}
-                    disabled={llmSettings.profiles.length <= 1}
-                    className="px-3 py-2 border border-border rounded hover:bg-accent text-sm disabled:opacity-50 inline-flex items-center gap-1"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    {t('settings.profile.delete')}
-                  </button>
+            <div className="rounded border border-border p-3 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium">{t('settings.profile.section')}</div>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('settings.profile.manageHint')}</p>
                 </div>
-
-                <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
-                  <input
-                    type="text"
-                    value={profileNameInput}
-                    onChange={(e) => setProfileNameInput(e.target.value)}
-                    className="px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    placeholder={t('settings.profile.namePlaceholder')}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleRenameProfile}
-                    className="px-3 py-2 border border-border rounded hover:bg-accent text-sm"
-                  >
-                    {t('settings.profile.rename')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleActivateSelectedProfile()}
-                    disabled={selectedProfile.id === llmSettings.activeProfileId || isSwitchingProfile}
-                    className="px-3 py-2 border border-border rounded hover:bg-accent text-sm disabled:opacity-50"
-                  >
-                    {isSwitchingProfile
-                      ? t('settings.profile.switching')
-                      : selectedProfile.id === llmSettings.activeProfileId
-                        ? t('settings.profile.active')
-                        : t('settings.profile.setActive')}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleCreateProfile}
+                  className="px-3 py-2 border border-border rounded hover:bg-accent text-sm inline-flex items-center gap-1 shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  {t('settings.profile.create')}
+                </button>
               </div>
 
-              <div className="rounded border border-border p-3 space-y-3">
-                <div className="text-sm font-medium">{t('settings.section.basic')}</div>
-                <div>
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <label className="block text-sm font-medium">{t('settings.apiKey')}</label>
-                    <span className="text-xs text-muted-foreground">
-                      {clearApiKeyOnSave
-                        ? t('settings.apiKey.clearPending')
-                        : selectedProfile.secret.hasApiKey
-                          ? t('settings.apiKey.saved')
-                          : t('settings.apiKey.empty')}
-                    </span>
-                  </div>
-                  <input
-                    type="password"
-                    value={apiKeyInput}
-                    onChange={(e) => {
-                      setApiKeyInput(e.target.value)
-                      if (e.target.value.trim()) setClearApiKeyOnSave(false)
-                    }}
-                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    placeholder={t('settings.apiKey.placeholder')}
-                  />
-                  <div className="mt-2 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setApiKeyInput('')
-                        setClearApiKeyOnSave(true)
-                      }}
-                      className={RESET_BUTTON_CLASS}
-                    >
-                      {t('settings.apiKey.clear')}
-                    </button>
-                    <p className="text-xs text-muted-foreground">{t('settings.apiKey.help')}</p>
-                  </div>
-                </div>
+              <input
+                type="text"
+                value={profileSearchKeyword}
+                onChange={(e) => setProfileSearchKeyword(e.target.value)}
+                className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                placeholder={t('settings.profile.searchPlaceholder')}
+              />
 
-                <div>
-                  <label className="block text-sm font-medium mb-1">{t('settings.baseUrl')}</label>
-                  <input
-                    type="text"
-                    value={baseURL}
-                    onChange={(e) => setBaseURL(e.target.value)}
-                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    placeholder="https://api.openai.com/v1"
-                  />
-                </div>
+              <div className="border border-border rounded overflow-hidden">
+                <div className="max-h-[420px] overflow-auto">
+                  {filteredProfiles.length === 0 ? (
+                    <div className="px-3 py-3 text-sm text-muted-foreground">{t('settings.profile.empty')}</div>
+                  ) : (
+                    filteredProfiles.map((profile) => {
+                      const isActive = profile.id === llmSettings.activeProfileId
+                      const isSelected = profile.id === selectedProfile.id
+                      const isSwitching = switchingProfileId === profile.id
 
-                <div>
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <label className="block text-sm font-medium">{t('settings.model')}</label>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void loadModelOptions()}
-                        className={RESET_BUTTON_CLASS}
-                        disabled={isLoadingModels}
-                      >
-                        {isLoadingModels ? t('settings.model.fetching') : t('settings.model.fetch')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsModelLibraryOpen(true)}
-                        className={RESET_BUTTON_CLASS}
-                      >
-                        {t('settings.model.library.open')}
-                      </button>
-                    </div>
-                  </div>
-                  <input
-                    type="text"
-                    value={model}
-                    onChange={(e) => {
-                      setModel(e.target.value)
-                      setModelSearchKeyword(e.target.value)
-                    }}
-                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    placeholder="gpt-5"
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {modelOptions.length > 0
-                      ? t('settings.model.loaded', { count: modelOptions.length })
-                      : t('settings.model.help')}
-                  </p>
-                </div>
+                      return (
+                        <div
+                          key={profile.id}
+                          className={`border-b border-border/60 last:border-b-0 p-3 flex items-start justify-between gap-3 ${
+                            isSelected ? 'bg-accent/35' : ''
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setSelectedProfileId(profile.id)}
+                            className="min-w-0 text-left flex-1"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium truncate">{profile.name}</span>
+                              {isActive && (
+                                <span className="text-[11px] px-1.5 py-0.5 rounded bg-primary/15 text-primary">
+                                  {t('common.current')}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground truncate">
+                              {profile.config.model || '-'}
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
+                              {profile.config.apiStyle} · {profile.config.baseURL || '-'}
+                            </div>
+                          </button>
 
-                <div>
-                  <label className="block text-sm font-medium mb-1">{t('settings.apiStyle')}</label>
-                  <select
-                    value={apiStyle}
-                    onChange={(e) => setApiStyle(e.target.value as ApiStyle)}
-                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="openai_chat">{t('settings.apiStyle.openai')}</option>
-                    <option value="openai_response">{t('settings.apiStyle.openaiResponse')}</option>
-                    <option value="anthropic">{t('settings.apiStyle.anthropic')}</option>
-                    <option value="google_gemini">{t('settings.apiStyle.google')}</option>
-                  </select>
-                  <p className="mt-1 text-xs text-muted-foreground">{t('settings.apiStyle.help')}</p>
+                          <div className="shrink-0 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenProfileEditor(profile.id)}
+                              className={RESET_BUTTON_CLASS}
+                            >
+                              {t('settings.profile.edit')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleActivateProfile(profile.id)}
+                              disabled={isActive || Boolean(switchingProfileId)}
+                              className={`${RESET_BUTTON_CLASS} disabled:opacity-50`}
+                            >
+                              {isSwitching
+                                ? t('settings.profile.switching')
+                                : isActive
+                                  ? t('settings.profile.active')
+                                  : t('settings.profile.setActive')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteProfile(profile.id)}
+                              disabled={llmSettings.profiles.length <= 1}
+                              className={`${RESET_BUTTON_CLASS} disabled:opacity-50`}
+                              aria-label={t('settings.profile.delete')}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
                 </div>
               </div>
-
-              <div className="rounded border border-border p-3 space-y-3">
-                <div className="text-sm font-medium">{t('settings.section.advanced')}</div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">{t('settings.temperature')}</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={2}
-                      step={0.1}
-                      value={temperature}
-                      onChange={(e) => setTemperature(e.target.value)}
-                      className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">{t('settings.maxTokens')}</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={32000}
-                      step={1}
-                      value={maxTokens}
-                      onChange={(e) => setMaxTokens(e.target.value)}
-                      className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                </div>
-              </div>
-            </>
+            </div>
           )}
 
           {activeTab === 'prompt' && (
@@ -782,8 +779,206 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
         </div>
       </div>
 
-      {isModelLibraryOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={() => setIsModelLibraryOpen(false)}>
+      {isProfileEditorOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40"
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsProfileEditorOpen(false)
+          }}
+        >
+          <div
+            className="w-[760px] max-w-[94vw] max-h-[90vh] overflow-y-auto bg-background border border-border rounded-lg shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">{t('settings.profile.editTitle')}</div>
+                <div className="text-xs text-muted-foreground">{t('settings.profile.editDescription')}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsProfileEditorOpen(false)}
+                className="p-1 rounded hover:bg-accent"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">{t('settings.profile.namePlaceholder')}</label>
+                <input
+                  type="text"
+                  value={profileNameInput}
+                  onChange={(e) => setProfileNameInput(e.target.value)}
+                  className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  placeholder={t('settings.profile.namePlaceholder')}
+                />
+              </div>
+
+              <div className="rounded border border-border p-3 space-y-3">
+                <div className="text-sm font-medium">{t('settings.section.basic')}</div>
+                <div>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-sm font-medium">{t('settings.apiKey')}</label>
+                    <span className="text-xs text-muted-foreground">
+                      {clearApiKeyOnSave
+                        ? t('settings.apiKey.clearPending')
+                        : hasStoredApiKey
+                          ? t('settings.apiKey.saved')
+                          : t('settings.apiKey.empty')}
+                    </span>
+                  </div>
+                  <input
+                    type="password"
+                    value={apiKeyInput}
+                    onChange={(e) => {
+                      setApiKeyInput(e.target.value)
+                      if (e.target.value.trim()) setClearApiKeyOnSave(false)
+                    }}
+                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder={t('settings.apiKey.placeholder')}
+                  />
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setApiKeyInput('')
+                        setClearApiKeyOnSave(true)
+                      }}
+                      className={RESET_BUTTON_CLASS}
+                    >
+                      {t('settings.apiKey.clear')}
+                    </button>
+                    <p className="text-xs text-muted-foreground">{t('settings.apiKey.help')}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">{t('settings.baseUrl')}</label>
+                  <input
+                    type="text"
+                    value={baseURL}
+                    onChange={(e) => setBaseURL(e.target.value)}
+                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="https://api.openai.com/v1"
+                  />
+                </div>
+
+                <div>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-sm font-medium">{t('settings.model')}</label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void loadModelOptions()}
+                        className={RESET_BUTTON_CLASS}
+                        disabled={isLoadingModels}
+                      >
+                        {isLoadingModels ? t('settings.model.fetching') : t('settings.model.fetch')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsModelLibraryOpen(true)}
+                        className={RESET_BUTTON_CLASS}
+                      >
+                        {t('settings.model.library.open')}
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    value={model}
+                    onChange={(e) => {
+                      setModel(e.target.value)
+                      setModelSearchKeyword(e.target.value)
+                    }}
+                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="gpt-5"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {modelOptions.length > 0
+                      ? t('settings.model.loaded', { count: modelOptions.length })
+                      : t('settings.model.help')}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">{t('settings.apiStyle')}</label>
+                  <select
+                    value={apiStyle}
+                    onChange={(e) => setApiStyle(e.target.value as ApiStyle)}
+                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="openai_chat">{t('settings.apiStyle.openai')}</option>
+                    <option value="openai_response">{t('settings.apiStyle.openaiResponse')}</option>
+                    <option value="anthropic">{t('settings.apiStyle.anthropic')}</option>
+                    <option value="google_gemini">{t('settings.apiStyle.google')}</option>
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('settings.apiStyle.help')}</p>
+                </div>
+              </div>
+
+              <div className="rounded border border-border p-3 space-y-3">
+                <div className="text-sm font-medium">{t('settings.section.advanced')}</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">{t('settings.temperature')}</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={2}
+                      step={0.1}
+                      value={temperature}
+                      onChange={(e) => setTemperature(e.target.value)}
+                      className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">{t('settings.maxTokens')}</label>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={maxTokens}
+                      onChange={(e) => setMaxTokens(e.target.value)}
+                      className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsProfileEditorOpen(false)}
+                className="px-4 py-2 border border-border rounded hover:bg-accent"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSaveProfile()}
+                disabled={isSavingProfile}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-60"
+              >
+                {isSavingProfile ? t('common.generating') : t('common.save')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isProfileEditorOpen && isModelLibraryOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40"
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsModelLibraryOpen(false)
+          }}
+        >
           <div className="w-[680px] max-w-[92vw] bg-background border border-border rounded-lg shadow-lg" onClick={(e) => e.stopPropagation()}>
             <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
               <div>
