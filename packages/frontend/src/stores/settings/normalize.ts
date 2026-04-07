@@ -6,10 +6,17 @@ import {
   getDefaultPromptConfig
 } from './defaults'
 import { upgradeLegacyPromptDefaults } from './legacyUpgrade'
-import type { LLMSettings, LocalizedPromptConfig, UISettings } from './types'
+import type { ApiStyle, LLMSettings, LocalizedPromptConfig, UISettings } from './types'
 
 export function resolvePromptLocale(value: unknown): LocaleCode {
   return value === 'en-US' ? 'en-US' : 'zh-CN'
+}
+
+export function normalizeApiStyle(value: unknown): ApiStyle {
+  if (value === 'google_gemini') return 'google_gemini'
+  if (value === 'anthropic') return 'anthropic'
+  if (value === 'openai_response') return 'openai_response'
+  return 'openai_chat'
 }
 
 export function normalizeAnswerAnchorKeywords(input: unknown, fallback: string[]): string[] {
@@ -64,9 +71,9 @@ export function normalizeLLMSettings(settings?: Partial<LLMSettings>): LLMSettin
 
   return {
     apiKey: upgraded.apiKey || '',
-    baseURL: upgraded.baseURL || 'https://mg.aid.pub/v1',
-    model: upgraded.model || 'Gemini-3.1-Pro',
-    apiStyle: upgraded.apiStyle || 'openai_chat',
+    baseURL: upgraded.baseURL || '',
+    model: upgraded.model || '',
+    apiStyle: normalizeApiStyle(upgraded.apiStyle),
     promptLocale,
     localizedPrompts,
     answerAnchorKeywords: [...activePromptConfig.answerAnchorKeywords],

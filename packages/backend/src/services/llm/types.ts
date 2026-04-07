@@ -1,7 +1,7 @@
 import type { NodeImage } from '../../types/index.js'
 
 export type ExpandMode = 'direct' | 'targeted' | 'custom_context'
-export type ApiStyle = 'openai_chat' | 'google_gemini'
+export type ApiStyle = 'openai_chat' | 'google_gemini' | 'anthropic' | 'openai_response'
 
 export interface PromptTemplates {
   directExpand: string
@@ -50,6 +50,7 @@ export interface ChatCompletionChoice {
 export interface ChatCompletionResponse {
   choices?: ChatCompletionChoice[]
   output?: Array<Record<string, unknown>>
+  output_text?: string
 }
 
 export interface GoogleGenerateResponse {
@@ -62,6 +63,10 @@ export interface GoogleGenerateResponse {
       }>
     }
   }>
+}
+
+export interface AnthropicMessageResponse {
+  content?: Array<Record<string, unknown> | string>
 }
 
 export interface GeneratedAnswer {

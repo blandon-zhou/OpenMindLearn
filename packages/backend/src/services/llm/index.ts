@@ -1,10 +1,12 @@
 import type { NodeImage } from '../../types/index.js'
+import { buildAnthropicPayload, normalizeAnthropicResponse } from './adapters/anthropic.js'
 import { buildGoogleGeminiPayload, normalizeGoogleResponse } from './adapters/googleGemini.js'
 import { buildOpenAIChatPayload, normalizeOpenAIResponse } from './adapters/openaiChat.js'
+import { buildOpenAIResponsesPayload } from './adapters/openaiResponses.js'
 import { getLLMConfig, getResolvedConfig, setLLMConfig } from './config.js'
 import { buildContextPromptFromTemplates, buildExpandPromptFromTemplates } from './prompts.js'
 import { extractErrorMessage, parseResponseJson } from './transport.js'
-import type { ChatCompletionResponse, ExpandMode, GeneratedAnswer, GoogleGenerateResponse, ApiStyle, PromptTemplates } from './types.js'
+import type { AnthropicMessageResponse, ChatCompletionResponse, ExpandMode, GeneratedAnswer, GoogleGenerateResponse, ApiStyle, PromptTemplates } from './types.js'
 
 export type { ExpandMode, ApiStyle, PromptTemplates, GeneratedAnswer }
 
@@ -37,7 +39,23 @@ async function generateByStyle(prompt: string, images?: NodeImage[]): Promise<Ge
     return normalizeGoogleResponse(data as GoogleGenerateResponse, cfg.answerAnchorKeywords)
   }
 
-  const payload = buildOpenAIChatPayload(cfg, prompt, images)
+  if (cfg.apiStyle === 'anthropic') {
+    const payload = buildAnthropicPayload(cfg, prompt, images)
+    const response = await fetch(payload.url, {
+      method: 'POST',
+      headers: payload.headers,
+      body: JSON.stringify(payload.body)
+    })
+    const data = await parseResponseJson(response)
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(data, `Anthropic API 请求失败：HTTP ${response.status}`))
+    }
+    return normalizeAnthropicResponse(data as AnthropicMessageResponse, cfg.answerAnchorKeywords)
+  }
+
+  const payload = cfg.apiStyle === 'openai_response'
+    ? buildOpenAIResponsesPayload(cfg, prompt, images)
+    : buildOpenAIChatPayload(cfg, prompt, images)
   const response = await fetch(payload.url, {
     method: 'POST',
     headers: payload.headers,

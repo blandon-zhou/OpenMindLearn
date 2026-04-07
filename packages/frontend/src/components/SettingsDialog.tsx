@@ -213,7 +213,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                     value={baseURL}
                     onChange={(e) => setBaseURL(e.target.value)}
                     className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    placeholder="https://mg.aid.pub/v1"
+                    placeholder="https://api.openai.com/v1"
                   />
                 </div>
 
@@ -236,6 +236,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                     className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   >
                     <option value="openai_chat">{t('settings.apiStyle.openai')}</option>
+                    <option value="openai_response">{t('settings.apiStyle.openaiResponse')}</option>
+                    <option value="anthropic">{t('settings.apiStyle.anthropic')}</option>
                     <option value="google_gemini">{t('settings.apiStyle.google')}</option>
                   </select>
                   <p className="mt-1 text-xs text-muted-foreground">{t('settings.apiStyle.help')}</p>

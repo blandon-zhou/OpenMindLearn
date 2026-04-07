@@ -153,6 +153,11 @@ function normalizeOutputPayload(output: Array<Record<string, unknown>> | undefin
 }
 
 export function normalizeOpenAIResponse(data: ChatCompletionResponse, answerAnchorKeywords: string[]): GeneratedAnswer {
+  const outputText = asText(data.output_text).trim()
+  if (outputText) {
+    return extractAnswerAndThinking(outputText, answerAnchorKeywords)
+  }
+
   if (Array.isArray(data.output) && data.output.length > 0) {
     return normalizeOutputPayload(data.output, answerAnchorKeywords)
   }

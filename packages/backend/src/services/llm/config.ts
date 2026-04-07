@@ -25,7 +25,20 @@ function toEnvNumber(value: string | undefined): number | undefined {
 
 export function normalizeApiStyle(value: unknown): ApiStyle {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (normalized === 'openai_chat' || normalized === 'openai' || normalized === 'chat' || normalized === 'chat_completions') {
+    return 'openai_chat'
+  }
   if (normalized === 'google_gemini' || normalized === 'google') return 'google_gemini'
+  if (normalized === 'anthropic' || normalized === 'claude') return 'anthropic'
+  if (
+    normalized === 'openai_response'
+    || normalized === 'openai_responses'
+    || normalized === 'openai-response'
+    || normalized === 'responses'
+    || normalized === 'response'
+  ) {
+    return 'openai_response'
+  }
   return 'openai_chat'
 }
 
@@ -99,8 +112,8 @@ export function getResolvedConfig(): ResolvedConfig {
 
   return {
     apiKey: runtimeConfig.apiKey || process.env.GEMINI_API_KEY || '',
-    baseURL: runtimeConfig.baseURL || process.env.GEMINI_BASE_URL || 'https://mg.aid.pub/v1',
-    model: runtimeConfig.model || process.env.GEMINI_MODEL || 'Gemini-3.1-Pro',
+    baseURL: runtimeConfig.baseURL || process.env.GEMINI_BASE_URL || '',
+    model: runtimeConfig.model || process.env.GEMINI_MODEL || '',
     apiStyle: normalizeApiStyle(runtimeConfig.apiStyle || envApiStyle || 'openai_chat'),
     answerAnchorKeywords: normalizeAnswerAnchorKeywords(
       runtimeConfig.answerAnchorKeywords ?? envAnswerAnchorKeywords ?? DEFAULT_ANSWER_ANCHOR_KEYWORDS
