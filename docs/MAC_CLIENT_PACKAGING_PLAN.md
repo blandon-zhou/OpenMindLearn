@@ -95,7 +95,7 @@ packages/desktop/
 - `contextIsolation: true`、`nodeIntegration: false`。
 - Renderer 不直接访问 Node API，只走 Preload 白名单接口。
 - 文件系统操作集中在 Backend 或 Main/Preload，统一权限控制。
-- 首次启动检查 `.env` / API 配置可用性，缺失时引导到设置页。
+- 首次启动检查 API 配置可用性（不依赖 `.env` 存储密钥），缺失时引导到设置页。
 
 ---
 

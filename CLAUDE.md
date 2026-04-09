@@ -23,8 +23,6 @@ OpenMindLearn (开放思维学习) is an interactive learning system based on a 
 ```bash
 # Setup
 pnpm install
-cp packages/backend/.env.example packages/backend/.env
-# Add GEMINI_API_KEY to packages/backend/.env
 
 # Development (frontend: 5173, backend: 3000)
 pnpm dev
@@ -32,6 +30,8 @@ pnpm dev
 # Build
 pnpm build
 ```
+
+After startup, configure LLM in `Settings -> LLM` (API Key / Base URL / Model / API Style).
 
 ## Key Components
 

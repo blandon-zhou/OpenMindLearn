@@ -48,28 +48,34 @@ OpenMindLearn 帮助你以“节点关联”而不是“线性笔记”的方式
 pnpm install
 ```
 
-2. 配置后端环境变量：
-
-创建 `packages/backend/.env`：
+2. 启动前后端开发服务：
 
 ```bash
-GEMINI_API_KEY=your_api_key_here
+pnpm dev
 ```
 
-可选变量：
+3. 打开应用，在 `Settings -> LLM` 中配置：
+
+- API Key
+- Base URL
+- Model
+- API Style（如需要）
+
+运行时将优先使用应用内配置（Profile）作为 LLM 配置来源。
+
+4. （可选）在 `packages/backend/.env` 配置后端服务参数：
+
+```bash
+HOST=127.0.0.1
+PORT=3000
+```
+
+可选兼容默认值（仅在运行时 Profile 对应字段未设置时使用）：
 
 ```bash
 GEMINI_BASE_URL=https://mg.aid.pub/v1
 GEMINI_MODEL=Gemini-3.1-Pro
 API_STYLE=openai_chat
-PORT=3000
-HOST=127.0.0.1
-```
-
-3. 启动前后端开发服务：
-
-```bash
-pnpm dev
 ```
 
 访问：

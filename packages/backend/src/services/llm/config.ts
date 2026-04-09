@@ -112,7 +112,7 @@ export function getResolvedConfig(): ResolvedConfig {
   )
 
   return {
-    apiKey: runtimeConfig.apiKey || process.env.GEMINI_API_KEY || '',
+    apiKey: runtimeConfig.apiKey || '',
     baseURL: runtimeConfig.baseURL || process.env.GEMINI_BASE_URL || '',
     model: runtimeConfig.model || process.env.GEMINI_MODEL || '',
     apiStyle: normalizeApiStyle(runtimeConfig.apiStyle || envApiStyle || 'openai_chat'),

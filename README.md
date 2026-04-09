@@ -48,28 +48,34 @@ It includes:
 pnpm install
 ```
 
-2. Configure backend environment:
-
-Create `packages/backend/.env`:
+2. Start frontend + backend:
 
 ```bash
-GEMINI_API_KEY=your_api_key_here
+pnpm dev
 ```
 
-Optional variables:
+3. Open the app and configure LLM in `Settings -> LLM`:
+
+- API Key
+- Base URL
+- Model
+- API Style (if needed)
+
+The runtime uses this in-app profile configuration as the primary source.
+
+4. (Optional) Configure backend server env in `packages/backend/.env`:
+
+```bash
+HOST=127.0.0.1
+PORT=3000
+```
+
+Optional compatibility defaults (used only when runtime profile fields are not set):
 
 ```bash
 GEMINI_BASE_URL=https://mg.aid.pub/v1
 GEMINI_MODEL=Gemini-3.1-Pro
 API_STYLE=openai_chat
-PORT=3000
-HOST=127.0.0.1
-```
-
-3. Start frontend + backend:
-
-```bash
-pnpm dev
 ```
 
 Open:

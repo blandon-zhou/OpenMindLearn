@@ -53,5 +53,5 @@ PRs should include:
 4. Screenshots/GIFs for UI changes
 
 ## Security & Configuration Tips
-- Store secrets only in `packages/backend/.env` (for example, `GEMINI_API_KEY`).
+- Store API keys in app settings secure storage (desktop keychain / browser session fallback), not `.env`.
 - Do not commit API keys or generated local data files.
