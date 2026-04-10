@@ -50,7 +50,7 @@ export function NodeDetailPanel({
 
   return (
     <div
-      className="relative min-h-0 bg-background border-l border-border flex flex-col shadow-lg shrink-0"
+      className="relative z-50 min-h-0 bg-background border-l border-border flex flex-col shadow-lg shrink-0"
       style={{ width: `${detailPanelWidth}px` }}
     >
       <div
