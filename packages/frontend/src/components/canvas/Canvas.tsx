@@ -8,7 +8,7 @@ import { NodeCard } from '../NodeCard'
 import { ImageLightbox } from '../ImageLightbox'
 import { ChatShell } from '../chat/ChatShell'
 import { cn } from '../../utils/cn'
-import { generateNode } from '../../services/api'
+import { generateNode, isAbortError } from '../../services/api'
 import type { CanvasMode, DetailPanelState, MetaEditorState, VersionDialogState } from '../../types/canvas'
 import type { NodeAttachment, NodeImage } from '../../types'
 import { buildDiffLines } from '../../utils/search'
@@ -81,6 +81,7 @@ export function Canvas() {
     skipDirtyFlagRef,
     refreshNodeRuntimeData,
     handleSaveNodeContent,
+    handleCancelNodeEdit,
     handleGenerate,
     handleExpand,
     handleImagesChange,
@@ -88,6 +89,9 @@ export function Canvas() {
     createFirstNode,
     createNode,
     triggerNodeEdit,
+    triggerNodeRegenerate,
+    stopNodeGeneration,
+    registerExternalGenerationController,
     handleSaveNodeMeta: handleSaveNodeMetaRaw,
     handleRestoreVersion: handleRestoreVersionRaw,
     handleExportNode
@@ -145,7 +149,9 @@ export function Canvas() {
     skipDirtyFlagRef,
     refreshNodeRuntimeData,
     handleGenerate,
+    handleStopNodeGeneration: stopNodeGeneration,
     handleSaveNodeContent,
+    handleCancelNodeEdit,
     handleExpand,
     handleImagesChange,
     handleAttachmentsChange,
@@ -333,10 +339,12 @@ export function Canvas() {
   }) => {
     const images = options?.images
     const attachments = options?.attachments
+    const controller = new AbortController()
     const placeholderNodeId = createFirstNode('', false, prompt, images, attachments, '', true)
+    const unregisterController = registerExternalGenerationController(placeholderNodeId, controller)
     const run = (async () => {
       try {
-        const result = await generateNode(prompt, images)
+        const result = await generateNode(prompt, images, controller.signal)
         setNodes((nds) => {
           const now = new Date().toISOString()
           const nextNodes = nds.map((node) =>
@@ -357,6 +365,28 @@ export function Canvas() {
           return refreshNodeRuntimeData(nextNodes, edges)
         })
       } catch (error) {
+        if (isAbortError(error)) {
+          setNodes((nds) => {
+            const now = new Date().toISOString()
+            const nextNodes = nds.map((node) =>
+              node.id === placeholderNodeId
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      content: t('toast.nodeGenerationStopped'),
+                      thinking: '',
+                      question: prompt,
+                      isGenerating: false,
+                      updatedAt: now
+                    }
+                  }
+                : node
+            )
+            return refreshNodeRuntimeData(nextNodes, edges)
+          })
+          throw error
+        }
         setNodes((nds) => {
           const now = new Date().toISOString()
           const nextNodes = nds.map((node) =>
@@ -377,11 +407,13 @@ export function Canvas() {
           return refreshNodeRuntimeData(nextNodes, edges)
         })
         throw error
+      } finally {
+        unregisterController()
       }
     })()
 
     return { placeholderNodeId, run }
-  }, [createFirstNode, edges, refreshNodeRuntimeData, setNodes, t])
+  }, [createFirstNode, edges, refreshNodeRuntimeData, registerExternalGenerationController, setNodes, t])
 
   const handleSaveNodeMeta = useCallback(() => {
     if (!metaEditor) return
@@ -419,6 +451,7 @@ export function Canvas() {
       await run
       showToast(t('canvas.toast.firstNodeGenerated'), 'success')
     } catch (error) {
+      if (isAbortError(error)) return
       console.error(t('canvas.toast.firstNodeGenerateFailed'), error)
       showToast(t('canvas.toast.firstNodeGenerateFailed'), 'error')
     } finally {
@@ -441,6 +474,7 @@ export function Canvas() {
       try {
         await run
       } catch (error) {
+        if (isAbortError(error)) return
         console.error(t('canvas.toast.firstNodeGenerateFailed'), error)
         showToast(t('canvas.toast.firstNodeGenerateFailed'), 'error')
       } finally {
@@ -667,6 +701,7 @@ export function Canvas() {
             onCreateNode={createNode}
             onOpenDetail={openNodeDetailById}
             onEditNode={triggerNodeEdit}
+            onRegenerateNode={triggerNodeRegenerate}
             onOpenMeta={openNodeMetaEditor}
             onOpenVersions={openVersionDialog}
             onExportNode={handleExportNode}

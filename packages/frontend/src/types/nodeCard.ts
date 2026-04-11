@@ -14,6 +14,9 @@ export interface NodeCardData {
   thinking?: string
   isGenerating?: boolean
   isEditing?: boolean
+  editMode?: 'edit' | 'regenerate'
+  editDraft?: string
+  editDraftVersion?: string
   mode?: 'learn' | 'view'
   nodeId: string
   tags?: string[]
@@ -22,7 +25,9 @@ export interface NodeCardData {
   searchActive?: boolean
   sourceLinkedActive?: boolean
   onGenerate: (content: string) => void
+  onStopGenerate?: () => void
   onSaveContent: (content: string) => void
+  onCancelEdit?: () => void
   onExpand: (text: string, selectedNodeIds?: string[], sourceRef?: SourceReference, expandMode?: ExpandMode) => void
   allNodes?: Node[]
   expansionColor?: string

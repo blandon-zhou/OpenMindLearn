@@ -45,7 +45,9 @@ export interface FileIODeps {
   skipDirtyFlagRef: React.MutableRefObject<boolean>
   refreshNodeRuntimeData: (rfNodes: any[], edgeList: any[]) => any[]
   handleGenerate: (nodeId: string, content: string) => Promise<void>
+  handleStopNodeGeneration: (nodeId: string) => number
   handleSaveNodeContent: (nodeId: string, content: string) => void
+  handleCancelNodeEdit: (nodeId: string) => void
   handleExpand: (...args: any[]) => string | void
   handleImagesChange: (nodeId: string, images: NodeImage[]) => void
   handleAttachmentsChange: (nodeId: string, attachments: NodeAttachment[]) => void
@@ -139,7 +141,9 @@ export function useCanvasFileIO(deps: FileIODeps) {
         onImagesChange: (imgs: NodeImage[]) => deps.handleImagesChange(node.id, imgs),
         onAttachmentsChange: (attachments: NodeAttachment[]) => deps.handleAttachmentsChange(node.id, attachments),
         onGenerate: (c: string) => deps.handleGenerate(node.id, c),
+        onStopGenerate: () => deps.handleStopNodeGeneration(node.id),
         onSaveContent: (c: string) => deps.handleSaveNodeContent(node.id, c),
+        onCancelEdit: () => deps.handleCancelNodeEdit(node.id),
         onExpand: (text: string, selectedIds?: string[], sourceRef?: SourceReference, expandMode?: ExpandMode) =>
           deps.handleExpand(text, node.id, selectedIds, sourceRef, expandMode),
         allNodes: loadedNodes,

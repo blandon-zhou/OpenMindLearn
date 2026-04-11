@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Handle, Position, NodeResizer } from '@xyflow/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Sparkles, Loader2, Save, ImagePlus, FilePlus2, Paperclip, Download, X } from 'lucide-react'
+import { Loader2, ImagePlus, FilePlus2, Paperclip, Download, X } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { ImageLightbox } from './ImageLightbox'
 import { ContextPanel } from './ContextPanel'
@@ -36,6 +36,7 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
   const { showToast } = useToastStore()
 
   const selection = useNodeCardSelection()
+  const isRegenerateMode = data.editMode === 'regenerate'
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
@@ -86,6 +87,12 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
   useEffect(() => {
     setIsEditing(!isReadOnly && Boolean(data.isEditing))
   }, [data.isEditing, isReadOnly])
+
+  useEffect(() => {
+    if (isReadOnly || !data.isEditing) return
+    const nextDraft = typeof data.editDraft === 'string' ? data.editDraft : data.content
+    setContent(nextDraft || '')
+  }, [data.isEditing, data.editDraft, data.editDraftVersion, data.content, isReadOnly])
 
   useEffect(() => {
     if (isReadOnly) {
@@ -172,6 +179,16 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
     setIsEditing(false)
   }
 
+  const handleCancelEdit = () => {
+    setContent(String(data.content || ''))
+    setIsEditing(false)
+    data.onCancelEdit?.()
+  }
+
+  const handleStopGenerate = () => {
+    data.onStopGenerate?.()
+  }
+
   const handleDownloadAttachment = useCallback((attachment: typeof attachments[number]) => {
     try {
       downloadNodeAttachment(attachment)
@@ -231,7 +248,30 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
             )}
           </div>
         )}
-        {isEditing ? (
+        {isGenerating ? (
+          <div className="flex-1 min-h-0 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-2">
+              <div
+                className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs text-primary animate-pulse"
+                style={{
+                  transform: `scale(${generateIndicatorScale})`,
+                  transformOrigin: 'center center'
+                }}
+              >
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>{t('common.generating')}</span>
+              </div>
+              {!isReadOnly && (
+                <button
+                  onClick={handleStopGenerate}
+                  className="inline-flex items-center gap-1 rounded border border-destructive/45 px-2.5 py-1 text-xs text-destructive hover:bg-destructive/10 transition-colors"
+                >
+                  {t('common.stopGenerating')}
+                </button>
+              )}
+            </div>
+          </div>
+        ) : isEditing ? (
           <textarea
             ref={textareaRef}
             value={content}
@@ -244,19 +284,6 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
             )}
             placeholder={t('node.placeholder')}
           />
-        ) : isGenerating ? (
-          <div className="flex-1 min-h-0 flex items-center justify-center">
-            <div
-              className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs text-primary animate-pulse"
-              style={{
-                transform: `scale(${generateIndicatorScale})`,
-                transformOrigin: 'center center'
-              }}
-            >
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>{t('common.generating')}</span>
-            </div>
-          </div>
         ) : (
           <div className="space-y-1 flex-1 min-h-0 flex flex-col">
             {(data.thinking || '').trim() && (
@@ -364,7 +391,7 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
         )}
       </div>
 
-      {isEditing && !isReadOnly && (
+      {isEditing && !isReadOnly && !isGenerating && (
         <div className="flex items-center justify-end gap-1.5 px-2 py-1.5 bg-secondary/20 border-t">
           <label
             className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded border border-border/70 cursor-pointer text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
@@ -383,33 +410,41 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
             <input type="file" multiple className="hidden" onChange={handleAttachmentUpload} />
           </label>
           <button
-            onClick={handleSave}
-            disabled={!content.trim()}
-            className={cn(
-              'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded',
-              'text-muted-foreground hover:text-foreground hover:bg-secondary',
-              'disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
-            )}
-            title={t('node.saveContent')}
-          >
-            <Save className="w-3 h-3" />
-          </button>
-          <button
-            onClick={handleGenerate}
-            disabled={loading || !content.trim()}
+            onClick={handleCancelEdit}
             className={cn(
               'inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded',
-              'bg-primary text-primary-foreground hover:bg-primary/90',
-              'disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
+              'text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors'
             )}
           >
-            {loading ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Sparkles className="w-3 h-3" />
-            )}
-            {loading ? '...' : t('node.generate')}
+            {t('common.cancel')}
           </button>
+          {isRegenerateMode ? (
+            <button
+              onClick={handleGenerate}
+              disabled={loading || !content.trim()}
+              className={cn(
+                'inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded',
+                'bg-primary text-primary-foreground hover:bg-primary/90',
+                'disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
+              )}
+            >
+              {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+              {loading ? t('common.generating') : t('node.generate')}
+            </button>
+          ) : (
+            <button
+              onClick={handleSave}
+              disabled={!content.trim()}
+              className={cn(
+                'inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded',
+                'bg-primary text-primary-foreground hover:bg-primary/90',
+                'disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
+              )}
+              title={t('node.saveContent')}
+            >
+              {t('common.save')}
+            </button>
+          )}
         </div>
       )}
 

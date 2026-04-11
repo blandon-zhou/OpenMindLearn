@@ -11,13 +11,21 @@ async function parseJsonOrThrow(res: Response) {
   return data
 }
 
-export async function generateNode(prompt: string, images?: NodeImage[]) {
+export async function generateNode(prompt: string, images?: NodeImage[], signal?: AbortSignal) {
   const res = await fetch(`${API_BASE}/nodes/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, images })
+    body: JSON.stringify({ prompt, images }),
+    signal
   })
   return parseJsonOrThrow(res)
+}
+
+export function isAbortError(error: unknown): boolean {
+  if (!error) return false
+  if (error instanceof DOMException) return error.name === 'AbortError'
+  if (error instanceof Error) return error.name === 'AbortError'
+  return false
 }
 
 export function stripImagesFromNodes(nodes: Node[]): Node[] {
@@ -32,12 +40,14 @@ export async function expandNode(
   sourceRef?: SourceReference,
   expandMode?: ExpandMode,
   contextMaxDepth?: number,
-  images?: NodeImage[]
+  images?: NodeImage[],
+  signal?: AbortSignal
 ) {
   const res = await fetch(`${API_BASE}/nodes/expand`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, parentId, allNodes, selectedNodeIds, sourceRef, expandMode, contextMaxDepth, images })
+    body: JSON.stringify({ text, parentId, allNodes, selectedNodeIds, sourceRef, expandMode, contextMaxDepth, images }),
+    signal
   })
   return parseJsonOrThrow(res)
 }

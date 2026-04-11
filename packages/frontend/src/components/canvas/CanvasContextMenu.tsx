@@ -7,6 +7,7 @@ interface CanvasContextMenuProps {
   onCreateNode: (position: { x: number; y: number }) => void
   onOpenDetail: (nodeId: string) => void
   onEditNode: (nodeId: string) => void
+  onRegenerateNode: (nodeId: string) => void
   onOpenMeta: (nodeId: string) => void
   onOpenVersions: (nodeId: string) => void
   onExportNode: (nodeId: string) => void
@@ -20,6 +21,7 @@ export function CanvasContextMenu({
   onCreateNode,
   onOpenDetail,
   onEditNode,
+  onRegenerateNode,
   onOpenMeta,
   onOpenVersions,
   onExportNode,
@@ -102,7 +104,7 @@ export function CanvasContextMenu({
             icon={<RefreshCw className="w-4 h-4" />}
             label={t('canvas.menu.regenerate')}
             onClick={() => {
-              onEditNode(contextMenu.nodeId!)
+              onRegenerateNode(contextMenu.nodeId!)
               onClose()
             }}
           />

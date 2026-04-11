@@ -4,6 +4,8 @@ import {
   DEFAULT_PROMPT_TEMPLATES_BY_LOCALE,
   DEFAULT_SYSTEM_PROMPT_BY_LOCALE,
   type ApiStyle,
+  type ExpandMode,
+  type PromptTemplates,
   type ThemeMode,
   useSettingsStore
 } from '../stores/settingsStore'
@@ -11,7 +13,7 @@ import type { LocaleCode, LocaleMode } from '../i18n/types'
 import { fetchProfileModels, getLLMProfileById, syncProfileToRuntime } from '../services/profileRuntime'
 import { getSecret, removeSecret, setSecret } from '../services/secureSecret'
 import { useToastStore } from '../stores/toastStore'
-import { Moon, Plus, Sun, Trash2, X } from 'lucide-react'
+import { Copy, Moon, Plus, Sun, Trash2, X } from 'lucide-react'
 import { useI18n } from '../hooks/useI18n'
 
 interface SettingsDialogProps {
@@ -21,6 +23,33 @@ interface SettingsDialogProps {
 
 const RESET_BUTTON_CLASS = 'px-2.5 py-1 text-xs rounded border border-border hover:bg-accent text-muted-foreground hover:text-foreground transition-colors'
 const UNBOUNDED_MAX_TOKENS = Number.MAX_SAFE_INTEGER
+type PreviewSource = ExpandMode | 'context_envelope'
+
+function resolveTemplate(template: string | undefined, fallback: string, requiredTokens: string[]): string {
+  const value = (template || '').trim()
+  if (!value) return fallback
+  let resolved = value
+  requiredTokens.forEach((token) => {
+    if (!resolved.includes(`{{${token}}}`)) {
+      resolved = `${resolved}\n\n{{${token}}}`
+    }
+  })
+  return resolved
+}
+
+function applyTemplate(template: string, variables: Record<string, string>): string {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key: string) => variables[key] ?? '')
+}
+
+function resolvePreviewTemplates(promptLocale: LocaleCode, templates: PromptTemplates): PromptTemplates {
+  const fallback = DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale]
+  return {
+    directExpand: resolveTemplate(templates.directExpand, fallback.directExpand, ['text']),
+    targetedQuestion: resolveTemplate(templates.targetedQuestion, fallback.targetedQuestion, ['text']),
+    customContextExpand: resolveTemplate(templates.customContextExpand, fallback.customContextExpand, ['text']),
+    contextEnvelope: resolveTemplate(templates.contextEnvelope, fallback.contextEnvelope, ['contextXml', 'prompt'])
+  }
+}
 
 function getLocalePromptConfig(llmSettings: ReturnType<typeof useSettingsStore.getState>['llmSettings'], locale: LocaleCode) {
   return llmSettings.localizedPrompts[locale] || {
@@ -28,6 +57,21 @@ function getLocalePromptConfig(llmSettings: ReturnType<typeof useSettingsStore.g
     promptTemplates: DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[locale],
     answerAnchorKeywords: DEFAULT_ANSWER_ANCHOR_KEYWORDS_BY_LOCALE[locale]
   }
+}
+
+function getDefaultPreviewInput(locale: LocaleCode): string {
+  return locale === 'zh-CN'
+    ? '请解释什么是闭包，并给一个简单示例。'
+    : 'Explain what a closure is and give one concise example.'
+}
+
+function getDefaultPreviewContextXml(locale: LocaleCode): string {
+  return `<context>
+  <node id="node-parent">
+    <content>${locale === 'zh-CN' ? '函数是一等公民，可以作为值传递。' : 'Functions are first-class values and can be passed around.'}</content>
+    <question>${locale === 'zh-CN' ? '函数式编程中的核心概念有哪些？' : 'What are key concepts in functional programming?'}</question>
+  </node>
+</context>`
 }
 
 export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
@@ -67,6 +111,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [targetedPrompt, setTargetedPrompt] = useState(llmSettings.promptTemplates.targetedQuestion)
   const [customContextPrompt, setCustomContextPrompt] = useState(llmSettings.promptTemplates.customContextExpand)
   const [contextEnvelopePrompt, setContextEnvelopePrompt] = useState(llmSettings.promptTemplates.contextEnvelope)
+  const [previewSource, setPreviewSource] = useState<PreviewSource | null>(null)
+  const [previewInput, setPreviewInput] = useState('')
+  const [previewContextXml, setPreviewContextXml] = useState('')
   const [themeMode, setThemeMode] = useState<ThemeMode>(uiSettings.theme)
   const [localeMode, setLocaleModeState] = useState<LocaleMode>(uiSettings.localeMode)
   const [modelOptions, setModelOptions] = useState<string[]>([])
@@ -130,6 +177,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     setSwitchingProfileId('')
     setProfileSearchKeyword('')
     setModelSearchKeyword('')
+    setPreviewSource(null)
+    setPreviewInput(getDefaultPreviewInput(llmSettings.promptLocale))
+    setPreviewContextXml(getDefaultPreviewContextXml(llmSettings.promptLocale))
   }, [open, llmSettings.activeProfileId, llmSettings.promptLocale, llmSettings.contextMaxDepth, uiSettings.theme, uiSettings.localeMode])
 
   useEffect(() => {
@@ -149,6 +199,94 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     setModelOptions(profile.modelOptionsCache || [])
     setModelSearchKeyword(profile.config.model)
   }, [open, selectedProfileId])
+
+  const previewRendered = useMemo(() => {
+    if (!previewSource) return null
+
+    const templates = resolvePreviewTemplates(promptLocale, {
+      directExpand: directExpandPrompt,
+      targetedQuestion: targetedPrompt,
+      customContextExpand: customContextPrompt,
+      contextEnvelope: contextEnvelopePrompt
+    })
+
+    const resolvedInput = previewInput.trim() || getDefaultPreviewInput(promptLocale)
+    const resolvedContextXml = previewContextXml.trim() || getDefaultPreviewContextXml(promptLocale)
+    const resolvedSystemPrompt = systemPrompt.trim() || DEFAULT_SYSTEM_PROMPT_BY_LOCALE[promptLocale]
+
+    const modeLabel = (mode: ExpandMode) => {
+      if (mode === 'targeted') return t('settings.preview.mode.targeted')
+      if (mode === 'custom_context') return t('settings.preview.mode.customContext')
+      return t('settings.preview.mode.direct')
+    }
+
+    const templateTitle = () => {
+      if (previewSource === 'targeted') return t('settings.template.targeted')
+      if (previewSource === 'custom_context') return t('settings.template.customContext')
+      if (previewSource === 'context_envelope') return t('settings.template.contextEnvelope')
+      return t('settings.template.direct')
+    }
+
+    const buildFinalUserPrompt = (mode: ExpandMode) => {
+      const modeTemplate = mode === 'targeted'
+        ? templates.targetedQuestion
+        : mode === 'custom_context'
+          ? templates.customContextExpand
+          : templates.directExpand
+      const expandPrompt = applyTemplate(modeTemplate, { text: resolvedInput })
+      return applyTemplate(templates.contextEnvelope, {
+        contextXml: resolvedContextXml,
+        prompt: expandPrompt
+      })
+    }
+
+    const previewModes: ExpandMode[] = previewSource === 'context_envelope'
+      ? ['direct', 'targeted', 'custom_context']
+      : [previewSource]
+
+    const userPrompts = previewModes.map((mode) => ({
+      mode,
+      label: modeLabel(mode),
+      content: buildFinalUserPrompt(mode)
+    }))
+
+    return {
+      title: templateTitle(),
+      systemPrompt: resolvedSystemPrompt,
+      userPrompts
+    }
+  }, [
+    contextEnvelopePrompt,
+    customContextPrompt,
+    directExpandPrompt,
+    previewContextXml,
+    previewInput,
+    previewSource,
+    promptLocale,
+    systemPrompt,
+    t,
+    targetedPrompt
+  ])
+
+  const handleCopyPromptPreview = async () => {
+    if (!previewRendered) return
+    const userPromptText = previewRendered.userPrompts
+      .map((item) => `${item.label}\n${item.content}`)
+      .join('\n\n')
+    const text = `${t('settings.preview.systemPrompt')}\n${previewRendered.systemPrompt}\n\n${t('settings.preview.userPrompt')}\n${userPromptText}`
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast(t('settings.preview.copied'), 'success')
+    } catch (error) {
+      showToast(t('settings.preview.copyFailed'), 'error')
+    }
+  }
+
+  const openPreview = (source: PreviewSource) => {
+    setPreviewSource(source)
+    setPreviewInput((prev) => prev.trim() ? prev : getDefaultPreviewInput(promptLocale))
+    setPreviewContextXml((prev) => prev.trim() ? prev : getDefaultPreviewContextXml(promptLocale))
+  }
 
   useEffect(() => {
     if (!open) return
@@ -197,6 +335,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const handlePromptLocaleChange = (nextLocale: LocaleCode) => {
     setPromptLocale(nextLocale)
     syncPromptFieldsByLocale(nextLocale)
+    setPreviewInput(getDefaultPreviewInput(nextLocale))
+    setPreviewContextXml(getDefaultPreviewContextXml(nextLocale))
   }
 
   const loadModelOptions = async (silent: boolean = false) => {
@@ -422,7 +562,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/50" onClick={onClose}>
       <div className="bg-background text-foreground rounded-lg border border-border shadow-lg w-[820px] max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">{t('settings.title')}</h2>
@@ -613,9 +753,33 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
               <div className="rounded border border-border p-3 space-y-3">
                 <div className="text-sm font-medium">{t('settings.section.promptCustom')}</div>
-                <div>
+                <div className="rounded border border-primary/30 bg-primary/5 p-3 space-y-2">
+                  <div className="text-sm font-medium">{t('settings.template.flowTitle')}</div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center rounded-full border border-border bg-background px-2 py-0.5">
+                      {t('settings.template.step', { index: 1 })} · {t('settings.systemPrompt')}
+                    </span>
+                    <span>→</span>
+                    <span className="inline-flex items-center rounded-full border border-border bg-background px-2 py-0.5">
+                      {t('settings.template.step', { index: 2 })} · {t('settings.template.contextEnvelope')}
+                    </span>
+                    <span>→</span>
+                    <span className="inline-flex items-center rounded-full border border-border bg-background px-2 py-0.5">
+                      {t('settings.template.step', { index: 3 })} · {t('settings.template.promptExpandGroup')}
+                    </span>
+                  </div>
+                  <div className="rounded border border-border bg-background/80 px-2 py-1.5 text-xs font-mono text-muted-foreground">
+                    {t('settings.template.flowFormula')}
+                  </div>
+                </div>
+                <div className="rounded border border-border p-3 space-y-2">
                   <div className="mb-1 flex items-center justify-between gap-2">
-                    <label className="text-sm font-medium">{t('settings.systemPrompt')}</label>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground">
+                        {t('settings.template.step', { index: 1 })}
+                      </span>
+                      <label className="text-sm font-medium">{t('settings.systemPrompt')}</label>
+                    </div>
                     <button
                       type="button"
                       onClick={() => setSystemPrompt(DEFAULT_SYSTEM_PROMPT_BY_LOCALE[promptLocale])}
@@ -628,87 +792,143 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                     value={systemPrompt}
                     onChange={(e) => setSystemPrompt(e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y font-mono text-xs"
                     placeholder={t('settings.systemPrompt.placeholder')}
                   />
                 </div>
 
-                <div>
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <label className="text-sm font-medium">{t('settings.template.direct')}</label>
-                    <button
-                      type="button"
-                      onClick={() => setDirectExpandPrompt(DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].directExpand)}
-                      className={RESET_BUTTON_CLASS}
-                    >
-                      {t('settings.prompt.resetDefaults')}
-                    </button>
+                <div className="border-t border-border pt-4 space-y-4">
+                  <div className="rounded border border-border p-3">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground">
+                          {t('settings.template.step', { index: 2 })}
+                        </span>
+                        <label className="text-sm font-medium">{t('settings.template.contextEnvelope')}</label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openPreview('context_envelope')}
+                          className={RESET_BUTTON_CLASS}
+                        >
+                          {t('settings.preview.open')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setContextEnvelopePrompt(DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].contextEnvelope)}
+                          className={RESET_BUTTON_CLASS}
+                        >
+                          {t('settings.prompt.resetDefaults')}
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      value={contextEnvelopePrompt}
+                      onChange={(e) => setContextEnvelopePrompt(e.target.value)}
+                      rows={8}
+                      className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y font-mono text-xs"
+                    />
                   </div>
-                  <textarea
-                    value={directExpandPrompt}
-                    onChange={(e) => setDirectExpandPrompt(e.target.value)}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y font-mono text-xs"
-                  />
-                </div>
 
-                <div>
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <label className="text-sm font-medium">{t('settings.template.targeted')}</label>
-                    <button
-                      type="button"
-                      onClick={() => setTargetedPrompt(DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].targetedQuestion)}
-                      className={RESET_BUTTON_CLASS}
-                    >
-                      {t('settings.prompt.resetDefaults')}
-                    </button>
-                  </div>
-                  <textarea
-                    value={targetedPrompt}
-                    onChange={(e) => setTargetedPrompt(e.target.value)}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y font-mono text-xs"
-                  />
-                </div>
+                  <div className="rounded border border-border p-3 space-y-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground">
+                          {t('settings.template.step', { index: 3 })}
+                        </span>
+                        <div className="text-sm font-medium">{t('settings.template.promptExpandGroup')}</div>
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">{t('settings.template.promptExpandGroup.help')}</div>
+                    </div>
 
-                <div>
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <label className="text-sm font-medium">{t('settings.template.customContext')}</label>
-                    <button
-                      type="button"
-                      onClick={() => setCustomContextPrompt(DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].customContextExpand)}
-                      className={RESET_BUTTON_CLASS}
-                    >
-                      {t('settings.prompt.resetDefaults')}
-                    </button>
-                  </div>
-                  <textarea
-                    value={customContextPrompt}
-                    onChange={(e) => setCustomContextPrompt(e.target.value)}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y font-mono text-xs"
-                  />
-                </div>
+                    <div>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <label className="text-sm font-medium">{t('settings.template.direct')}</label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openPreview('direct')}
+                            className={RESET_BUTTON_CLASS}
+                          >
+                            {t('settings.preview.open')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDirectExpandPrompt(DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].directExpand)}
+                            className={RESET_BUTTON_CLASS}
+                          >
+                            {t('settings.prompt.resetDefaults')}
+                          </button>
+                        </div>
+                      </div>
+                      <textarea
+                        value={directExpandPrompt}
+                        onChange={(e) => setDirectExpandPrompt(e.target.value)}
+                        rows={3}
+                        className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y font-mono text-xs"
+                      />
+                    </div>
 
-                <div>
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <label className="text-sm font-medium">{t('settings.template.contextEnvelope')}</label>
-                    <button
-                      type="button"
-                      onClick={() => setContextEnvelopePrompt(DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].contextEnvelope)}
-                      className={RESET_BUTTON_CLASS}
-                    >
-                      {t('settings.prompt.resetDefaults')}
-                    </button>
+                    <div>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <label className="text-sm font-medium">{t('settings.template.targeted')}</label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openPreview('targeted')}
+                            className={RESET_BUTTON_CLASS}
+                          >
+                            {t('settings.preview.open')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTargetedPrompt(DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].targetedQuestion)}
+                            className={RESET_BUTTON_CLASS}
+                          >
+                            {t('settings.prompt.resetDefaults')}
+                          </button>
+                        </div>
+                      </div>
+                      <textarea
+                        value={targetedPrompt}
+                        onChange={(e) => setTargetedPrompt(e.target.value)}
+                        rows={3}
+                        className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y font-mono text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <label className="text-sm font-medium">{t('settings.template.customContext')}</label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openPreview('custom_context')}
+                            className={RESET_BUTTON_CLASS}
+                          >
+                            {t('settings.preview.open')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCustomContextPrompt(DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].customContextExpand)}
+                            className={RESET_BUTTON_CLASS}
+                          >
+                            {t('settings.prompt.resetDefaults')}
+                          </button>
+                        </div>
+                      </div>
+                      <textarea
+                        value={customContextPrompt}
+                        onChange={(e) => setCustomContextPrompt(e.target.value)}
+                        rows={3}
+                        className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y font-mono text-xs"
+                      />
+                    </div>
                   </div>
-                  <textarea
-                    value={contextEnvelopePrompt}
-                    onChange={(e) => setContextEnvelopePrompt(e.target.value)}
-                    rows={8}
-                    className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y font-mono text-xs"
-                  />
                 </div>
               </div>
+
             </>
           )}
 
@@ -779,9 +999,85 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
         </div>
       </div>
 
+      {previewSource && previewRendered && (
+        <div
+          className="fixed inset-0 z-[12005] flex items-center justify-center bg-black/40"
+          onClick={(e) => {
+            e.stopPropagation()
+            setPreviewSource(null)
+          }}
+        >
+          <div
+            className="w-[920px] max-w-[96vw] max-h-[90vh] overflow-y-auto bg-background border border-border rounded-lg shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">{previewRendered.title} · {t('settings.preview.section')}</div>
+                <div className="text-xs text-muted-foreground">{t('settings.preview.description')}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleCopyPromptPreview()}
+                  className={RESET_BUTTON_CLASS}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    <Copy className="w-3.5 h-3.5" />
+                    {t('settings.preview.copy')}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewSource(null)}
+                  className="p-1 rounded hover:bg-accent"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">{t('settings.preview.input')}</label>
+                <textarea
+                  value={previewInput}
+                  onChange={(e) => setPreviewInput(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+                  placeholder={t('settings.preview.input.placeholder')}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">{t('settings.preview.contextXml')}</label>
+                <textarea
+                  value={previewContextXml}
+                  onChange={(e) => setPreviewContextXml(e.target.value)}
+                  rows={6}
+                  className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y font-mono text-xs"
+                  placeholder={t('settings.preview.contextXml.placeholder')}
+                />
+              </div>
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">{t('settings.preview.systemPrompt')}</div>
+                <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-border bg-muted/20 p-2 text-xs leading-relaxed">{previewRendered.systemPrompt}</pre>
+              </div>
+              {previewRendered.userPrompts.map((item) => (
+                <div key={item.mode}>
+                  <div className="mb-1 text-xs text-muted-foreground">
+                    {t('settings.preview.userPrompt')} · {item.label}
+                  </div>
+                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded border border-border bg-muted/20 p-2 text-xs leading-relaxed">{item.content}</pre>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {isProfileEditorOpen && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40"
+          className="fixed inset-0 z-[12010] flex items-center justify-center bg-black/40"
           onClick={(e) => {
             e.stopPropagation()
             setIsProfileEditorOpen(false)

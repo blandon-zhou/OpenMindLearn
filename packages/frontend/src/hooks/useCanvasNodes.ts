@@ -3,7 +3,7 @@ import { useNodesState, useEdgesState, useReactFlow, addEdge } from '@xyflow/rea
 import { useGraphStore } from '../stores/graphStore'
 import { useSettingsStore, type ExpandMode } from '../stores/settingsStore'
 import { useToastStore } from '../stores/toastStore'
-import { generateNode, expandNode, stripImagesFromNodes } from '../services/api'
+import { expandNode, generateNode, isAbortError, stripImagesFromNodes } from '../services/api'
 import { getExpansionColor } from '../utils/colors'
 import type { Node, SourceReference, Region, NodeVersion, NodeImage, NodeAttachment } from '../types'
 import type { SourceHighlight, MetaEditorState, VersionDialogState } from '../types/canvas'
@@ -28,6 +28,56 @@ export function useCanvasNodes(
   const { setDirty } = useGraphStore()
   const { showToast } = useToastStore()
   const llmSettings = useSettingsStore((state) => state.llmSettings)
+  const generationControllersRef = useRef(new Map<string, Set<AbortController>>())
+
+  const registerGenerationController = useCallback((nodeId: string, controller: AbortController) => {
+    const map = generationControllersRef.current
+    const current = map.get(nodeId) || new Set<AbortController>()
+    current.add(controller)
+    map.set(nodeId, current)
+    return controller
+  }, [])
+
+  const unregisterGenerationController = useCallback((nodeId: string, controller: AbortController) => {
+    const map = generationControllersRef.current
+    const current = map.get(nodeId)
+    if (!current) return
+    current.delete(controller)
+    if (current.size === 0) {
+      map.delete(nodeId)
+    }
+  }, [])
+
+  const stopNodeGeneration = useCallback((nodeId: string) => {
+    const current = generationControllersRef.current.get(nodeId)
+    if (!current || current.size === 0) return 0
+    const controllers = Array.from(current)
+    controllers.forEach((controller) => controller.abort())
+    return controllers.length
+  }, [])
+
+  const registerExternalGenerationController = useCallback((nodeId: string, controller: AbortController) => {
+    registerGenerationController(nodeId, controller)
+    return () => unregisterGenerationController(nodeId, controller)
+  }, [registerGenerationController, unregisterGenerationController])
+
+  const stopAllGenerations = useCallback(() => {
+    let count = 0
+    generationControllersRef.current.forEach((controllers) => {
+      count += controllers.size
+      controllers.forEach((controller) => controller.abort())
+    })
+    return count
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      generationControllersRef.current.forEach((controllers) => {
+        controllers.forEach((controller) => controller.abort())
+      })
+      generationControllersRef.current.clear()
+    }
+  }, [])
 
   const refreshNodeRuntimeData = useCallback((rfNodes: any[], edgeList: any[]) => {
     const snapshots = buildNodeSnapshots(rfNodes, edgeList)
@@ -91,6 +141,22 @@ export function useCanvasNodes(
     })
   }, [getEdges, refreshNodeRuntimeData, setNodes])
 
+  const handleCancelNodeEdit = useCallback((nodeId: string) => {
+    setNodes((nds) =>
+      nds.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                isEditing: false
+              }
+            }
+          : node
+      )
+    )
+  }, [setNodes])
+
   const handleImagesChange = useCallback((nodeId: string, images: NodeImage[]) => {
     setNodes((nds) => {
       const now = new Date().toISOString()
@@ -118,27 +184,83 @@ export function useCanvasNodes(
   const handleGenerate = useCallback(async (nodeId: string, content: string) => {
     const currentNode = getNodes().find((n) => n.id === nodeId)
     const images: NodeImage[] = (currentNode?.data?.images as NodeImage[]) || []
-    const result = await generateNode(content, images.length > 0 ? images : undefined)
-    setNodes((nds) => {
-      const now = new Date().toISOString()
-      const nextNodes = nds.map((node) => {
-        if (node.id !== nodeId) return node
-        const previousContent = node.data.content || ''
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            content: result.content,
-            thinking: result.thinking || '',
-            isEditing: false,
-            updatedAt: now,
-            versions: getNextVersions(node.data.versions || [], previousContent)
+    const controller = registerGenerationController(nodeId, new AbortController())
+
+    setNodes((nds) =>
+      nds.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                isGenerating: true,
+                isEditing: false
+              }
+            }
+          : node
+      )
+    )
+
+    try {
+      const result = await generateNode(content, images.length > 0 ? images : undefined, controller.signal)
+      setNodes((nds) => {
+        const now = new Date().toISOString()
+        const nextNodes = nds.map((node) => {
+          if (node.id !== nodeId) return node
+          const previousContent = node.data.content || ''
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              content: result.content,
+              thinking: result.thinking || '',
+              question: content,
+              isEditing: false,
+              isGenerating: false,
+              updatedAt: now,
+              versions: getNextVersions(node.data.versions || [], previousContent)
+            }
           }
-        }
+        })
+        return refreshNodeRuntimeData(nextNodes, getEdges())
       })
-      return refreshNodeRuntimeData(nextNodes, getEdges())
-    })
-  }, [getEdges, getNodes, refreshNodeRuntimeData, setNodes])
+    } catch (error) {
+      if (isAbortError(error)) {
+        setNodes((nds) =>
+          nds.map((node) =>
+            node.id === nodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    isGenerating: false,
+                    isEditing: true
+                  }
+                }
+              : node
+          )
+        )
+        return
+      }
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === nodeId
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  isGenerating: false,
+                  isEditing: true
+                }
+              }
+            : node
+        )
+      )
+      throw error
+    } finally {
+      unregisterGenerationController(nodeId, controller)
+    }
+  }, [getEdges, getNodes, refreshNodeRuntimeData, registerGenerationController, setNodes, unregisterGenerationController])
 
   const handleExpand = useCallback((
     text: string,
@@ -190,7 +312,9 @@ export function useCanvasNodes(
         onImagesChange: (imgs: NodeImage[]) => handleImagesChange(newNodeId, imgs),
         onAttachmentsChange: (attachments: NodeAttachment[]) => handleAttachmentsChange(newNodeId, attachments),
         onGenerate: (c: string) => handleGenerate(newNodeId, c),
+        onStopGenerate: () => stopNodeGeneration(newNodeId),
         onSaveContent: (c: string) => handleSaveNodeContent(newNodeId, c),
+        onCancelEdit: () => handleCancelNodeEdit(newNodeId),
         onExpand: (nextText: string, selectedIds?: string[], nextSourceRef?: SourceReference, nextExpandMode?: ExpandMode) =>
           handleExpand(nextText, newNodeId, selectedIds, nextSourceRef, nextExpandMode),
         allNodes,
@@ -213,6 +337,8 @@ export function useCanvasNodes(
     })
     setEdges((eds) => addEdge(newEdge, eds))
 
+    const controller = registerGenerationController(newNodeId, new AbortController())
+
     void (async () => {
       try {
         const result = await expandNode(
@@ -223,7 +349,8 @@ export function useCanvasNodes(
           sourceRef,
           expandMode,
           llmSettings.contextMaxDepth,
-          parentImages.length > 0 ? parentImages : undefined
+          parentImages.length > 0 ? parentImages : undefined,
+          controller.signal
         )
         setNodes((nds) => {
           const nowUpdated = new Date().toISOString()
@@ -246,6 +373,29 @@ export function useCanvasNodes(
           return refreshNodeRuntimeData(updatedNodes, edgesWithNewEdge)
         })
       } catch (error) {
+        if (isAbortError(error)) {
+          setNodes((nds) => {
+            const nowUpdated = new Date().toISOString()
+            const updatedNodes = nds.map((node) =>
+              node.id === newNodeId
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      content: tFromSettings('toast.nodeGenerationStopped'),
+                      thinking: '',
+                      question: text,
+                      updatedAt: nowUpdated,
+                      isGenerating: false,
+                      sourceRef
+                    }
+                  }
+                : node
+            )
+            return refreshNodeRuntimeData(updatedNodes, edgesWithNewEdge)
+          })
+          return
+        }
         console.error('Failed to expand node:', error)
         setNodes((nds) => {
           const nowUpdated = new Date().toISOString()
@@ -267,11 +417,13 @@ export function useCanvasNodes(
           )
           return refreshNodeRuntimeData(updatedNodes, edgesWithNewEdge)
         })
+      } finally {
+        unregisterGenerationController(newNodeId, controller)
       }
     })()
 
     return newNodeId
-  }, [getNodes, getEdges, handleGenerate, handleAttachmentsChange, handleImagesChange, handleSaveNodeContent, llmSettings.contextMaxDepth, refreshNodeRuntimeData, setEdges, setNodes])
+  }, [getNodes, getEdges, handleCancelNodeEdit, handleGenerate, handleAttachmentsChange, handleImagesChange, handleSaveNodeContent, llmSettings.contextMaxDepth, refreshNodeRuntimeData, registerGenerationController, setEdges, setNodes, stopNodeGeneration, unregisterGenerationController])
 
   const createNodeAtPosition = useCallback(
     (
@@ -302,6 +454,7 @@ export function useCanvasNodes(
         question: question || '',
         isGenerating: initialIsGenerating,
         isEditing,
+        editMode: 'edit',
         nodeId,
         width: NODE_DEFAULT_WIDTH,
         height: NODE_DEFAULT_HEIGHT,
@@ -315,7 +468,9 @@ export function useCanvasNodes(
         onImagesChange: (imgs: NodeImage[]) => handleImagesChange(nodeId, imgs),
         onAttachmentsChange: (attachments: NodeAttachment[]) => handleAttachmentsChange(nodeId, attachments),
         onGenerate: (c: string) => handleGenerate(nodeId, c),
+        onStopGenerate: () => stopNodeGeneration(nodeId),
         onSaveContent: (c: string) => handleSaveNodeContent(nodeId, c),
+        onCancelEdit: () => handleCancelNodeEdit(nodeId),
         onExpand: (text: string, selectedIds?: string[], sourceRef?: SourceReference, expandMode?: ExpandMode) =>
           handleExpand(text, nodeId, selectedIds, sourceRef, expandMode),
         allNodes: [] as Node[],
@@ -328,7 +483,7 @@ export function useCanvasNodes(
       return refreshNodeRuntimeData(nextNodes, currentEdges)
     })
     return nodeId
-  }, [getEdges, handleGenerate, handleAttachmentsChange, handleExpand, handleImagesChange, handleSaveNodeContent, refreshNodeRuntimeData, setNodes])
+  }, [getEdges, handleCancelNodeEdit, handleGenerate, handleAttachmentsChange, handleExpand, handleImagesChange, handleSaveNodeContent, refreshNodeRuntimeData, setNodes, stopNodeGeneration])
 
   const createFirstNode = useCallback((
     content: string,
@@ -352,22 +507,41 @@ export function useCanvasNodes(
     createNodeAtPosition(position, '', true)
   }, [createNodeAtPosition])
 
-  const triggerNodeEdit = useCallback((nodeId: string) => {
+  const openNodeEditor = useCallback((
+    nodeId: string,
+    mode: 'edit' | 'regenerate',
+    presetContent?: string
+  ) => {
     setNodes((nds) =>
       nds.map((node) => {
-        if (node.id === nodeId) {
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              isEditing: true
-            }
+        if (node.id !== nodeId) return node
+        const fallbackContent = String(node.data.content || '')
+        const nextDraft = typeof presetContent === 'string' ? presetContent : fallbackContent
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            isEditing: true,
+            editMode: mode,
+            editDraft: nextDraft,
+            editDraftVersion: `${Date.now()}-${nodeId}`
           }
         }
-        return node
       })
     )
   }, [setNodes])
+
+  const triggerNodeEdit = useCallback((nodeId: string) => {
+    openNodeEditor(nodeId, 'edit')
+  }, [openNodeEditor])
+
+  const triggerNodeRegenerate = useCallback((nodeId: string) => {
+    const targetNode = getNodes().find((node) => node.id === nodeId)
+    if (!targetNode) return
+    const question = String(targetNode.data?.question || '').trim()
+    const fallbackContent = String(targetNode.data?.content || '')
+    openNodeEditor(nodeId, 'regenerate', question || fallbackContent)
+  }, [getNodes, openNodeEditor])
 
   const handleSaveNodeMeta = useCallback((metaEditor: MetaEditorState, onDone: () => void) => {
     const tags = parseTags(metaEditor.tagsText)
@@ -466,14 +640,19 @@ export function useCanvasNodes(
     refreshNodeRuntimeData,
     getCanvasCenterFlowPosition,
     handleSaveNodeContent,
+    handleCancelNodeEdit,
     handleGenerate,
     handleExpand,
+    stopNodeGeneration,
+    registerExternalGenerationController,
     handleImagesChange,
     handleAttachmentsChange,
     createNodeAtPosition,
     createFirstNode,
     createNode,
     triggerNodeEdit,
+    triggerNodeRegenerate,
+    stopAllGenerations,
     handleSaveNodeMeta,
     handleRestoreVersion,
     handleExportNode
