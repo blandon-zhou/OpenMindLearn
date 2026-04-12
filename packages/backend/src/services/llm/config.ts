@@ -73,11 +73,6 @@ function getResolvedPromptTemplates(config: RuntimeConfig): PromptTemplates {
       DEFAULT_PROMPT_TEMPLATES.targetedQuestion,
       ['text']
     ),
-    customContextExpand: resolveTemplate(
-      config.promptTemplates?.customContextExpand,
-      DEFAULT_PROMPT_TEMPLATES.customContextExpand,
-      ['text']
-    ),
     contextEnvelope: resolveTemplate(
       config.promptTemplates?.contextEnvelope,
       DEFAULT_PROMPT_TEMPLATES.contextEnvelope,

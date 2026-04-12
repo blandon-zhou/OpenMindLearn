@@ -17,7 +17,7 @@ export async function nodeRoutes(fastify: FastifyInstance) {
       allNodes?: Node[]
       selectedNodeIds?: string[]
       sourceRef?: SourceReference
-      expandMode?: 'direct' | 'targeted' | 'custom_context'
+      expandMode?: 'direct' | 'targeted'
       contextMaxDepth?: number
       images?: NodeImage[]
     }
@@ -77,7 +77,6 @@ export async function nodeRoutes(fastify: FastifyInstance) {
       promptTemplates?: {
         directExpand?: string
         targetedQuestion?: string
-        customContextExpand?: string
         contextEnvelope?: string
       }
     }

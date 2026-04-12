@@ -25,13 +25,19 @@ const RESET_BUTTON_CLASS = 'px-2.5 py-1 text-xs rounded border border-border hov
 const UNBOUNDED_MAX_TOKENS = Number.MAX_SAFE_INTEGER
 type PreviewSource = ExpandMode | 'context_envelope'
 
+function getRequiredTokenPlaceholder(token: string): string {
+  if (token === 'text') return `<input>\n{{text}}\n</input>`
+  if (token === 'prompt') return `<task>\n{{prompt}}\n</task>`
+  return `{{${token}}}`
+}
+
 function resolveTemplate(template: string | undefined, fallback: string, requiredTokens: string[]): string {
   const value = (template || '').trim()
   if (!value) return fallback
   let resolved = value
   requiredTokens.forEach((token) => {
     if (!resolved.includes(`{{${token}}}`)) {
-      resolved = `${resolved}\n\n{{${token}}}`
+      resolved = `${resolved}\n\n${getRequiredTokenPlaceholder(token)}`
     }
   })
   return resolved
@@ -46,7 +52,6 @@ function resolvePreviewTemplates(promptLocale: LocaleCode, templates: PromptTemp
   return {
     directExpand: resolveTemplate(templates.directExpand, fallback.directExpand, ['text']),
     targetedQuestion: resolveTemplate(templates.targetedQuestion, fallback.targetedQuestion, ['text']),
-    customContextExpand: resolveTemplate(templates.customContextExpand, fallback.customContextExpand, ['text']),
     contextEnvelope: resolveTemplate(templates.contextEnvelope, fallback.contextEnvelope, ['contextXml', 'prompt'])
   }
 }
@@ -109,7 +114,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [systemPrompt, setSystemPrompt] = useState(llmSettings.systemPrompt)
   const [directExpandPrompt, setDirectExpandPrompt] = useState(llmSettings.promptTemplates.directExpand)
   const [targetedPrompt, setTargetedPrompt] = useState(llmSettings.promptTemplates.targetedQuestion)
-  const [customContextPrompt, setCustomContextPrompt] = useState(llmSettings.promptTemplates.customContextExpand)
   const [contextEnvelopePrompt, setContextEnvelopePrompt] = useState(llmSettings.promptTemplates.contextEnvelope)
   const [previewSource, setPreviewSource] = useState<PreviewSource | null>(null)
   const [previewInput, setPreviewInput] = useState('')
@@ -157,7 +161,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     setSystemPrompt(localized.systemPrompt)
     setDirectExpandPrompt(localized.promptTemplates.directExpand)
     setTargetedPrompt(localized.promptTemplates.targetedQuestion)
-    setCustomContextPrompt(localized.promptTemplates.customContextExpand)
     setContextEnvelopePrompt(localized.promptTemplates.contextEnvelope)
     setAnswerAnchorKeywordsText(localized.answerAnchorKeywords.join('\n'))
   }
@@ -206,7 +209,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     const templates = resolvePreviewTemplates(promptLocale, {
       directExpand: directExpandPrompt,
       targetedQuestion: targetedPrompt,
-      customContextExpand: customContextPrompt,
       contextEnvelope: contextEnvelopePrompt
     })
 
@@ -216,13 +218,11 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
     const modeLabel = (mode: ExpandMode) => {
       if (mode === 'targeted') return t('settings.preview.mode.targeted')
-      if (mode === 'custom_context') return t('settings.preview.mode.customContext')
       return t('settings.preview.mode.direct')
     }
 
     const templateTitle = () => {
       if (previewSource === 'targeted') return t('settings.template.targeted')
-      if (previewSource === 'custom_context') return t('settings.template.customContext')
       if (previewSource === 'context_envelope') return t('settings.template.contextEnvelope')
       return t('settings.template.direct')
     }
@@ -230,9 +230,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     const buildFinalUserPrompt = (mode: ExpandMode) => {
       const modeTemplate = mode === 'targeted'
         ? templates.targetedQuestion
-        : mode === 'custom_context'
-          ? templates.customContextExpand
-          : templates.directExpand
+        : templates.directExpand
       const expandPrompt = applyTemplate(modeTemplate, { text: resolvedInput })
       return applyTemplate(templates.contextEnvelope, {
         contextXml: resolvedContextXml,
@@ -241,7 +239,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     }
 
     const previewModes: ExpandMode[] = previewSource === 'context_envelope'
-      ? ['direct', 'targeted', 'custom_context']
+      ? ['direct', 'targeted']
       : [previewSource]
 
     const userPrompts = previewModes.map((mode) => ({
@@ -257,7 +255,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     }
   }, [
     contextEnvelopePrompt,
-    customContextPrompt,
     directExpandPrompt,
     previewContextXml,
     previewInput,
@@ -537,7 +534,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     const nextPromptTemplates = {
       directExpand: directExpandPrompt.trim() || DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].directExpand,
       targetedQuestion: targetedPrompt.trim() || DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].targetedQuestion,
-      customContextExpand: customContextPrompt.trim() || DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].customContextExpand,
       contextEnvelope: contextEnvelopePrompt.trim() || DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].contextEnvelope
     }
 
@@ -898,33 +894,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                       />
                     </div>
 
-                    <div>
-                      <div className="mb-1 flex items-center justify-between gap-2">
-                        <label className="text-sm font-medium">{t('settings.template.customContext')}</label>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openPreview('custom_context')}
-                            className={RESET_BUTTON_CLASS}
-                          >
-                            {t('settings.preview.open')}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setCustomContextPrompt(DEFAULT_PROMPT_TEMPLATES_BY_LOCALE[promptLocale].customContextExpand)}
-                            className={RESET_BUTTON_CLASS}
-                          >
-                            {t('settings.prompt.resetDefaults')}
-                          </button>
-                        </div>
-                      </div>
-                      <textarea
-                        value={customContextPrompt}
-                        onChange={(e) => setCustomContextPrompt(e.target.value)}
-                        rows={3}
-                        className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-y font-mono text-xs"
-                      />
-                    </div>
                   </div>
                 </div>
               </div>

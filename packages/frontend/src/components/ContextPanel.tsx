@@ -6,11 +6,12 @@ import { useI18n } from '../hooks/useI18n'
 interface ContextPanelProps {
   currentNodeId: string
   allNodes: Node[]
-  onConfirm: (selectedNodeIds: string[]) => void
+  onDirectExpand: (selectedNodeIds: string[]) => void
+  onTargetedQuestion: (selectedNodeIds: string[]) => void
   onClose: () => void
 }
 
-export function ContextPanel({ currentNodeId, allNodes, onConfirm, onClose }: ContextPanelProps) {
+export function ContextPanel({ currentNodeId, allNodes, onDirectExpand, onTargetedQuestion, onClose }: ContextPanelProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [upstreamNodes, setUpstreamNodes] = useState<Node[]>([])
   const { t } = useI18n()
@@ -68,8 +69,16 @@ export function ContextPanel({ currentNodeId, allNodes, onConfirm, onClose }: Co
     })
   }
 
-  const handleConfirm = () => {
-    onConfirm(upstreamNodes.filter(node => selectedIds.has(node.id)).map(node => node.id))
+  const getConfirmedIds = () => {
+    return upstreamNodes.filter((node) => selectedIds.has(node.id)).map((node) => node.id)
+  }
+
+  const handleDirectExpand = () => {
+    onDirectExpand(getConfirmedIds())
+  }
+
+  const handleTargetedQuestion = () => {
+    onTargetedQuestion(getConfirmedIds())
   }
 
   return (
@@ -143,7 +152,7 @@ export function ContextPanel({ currentNodeId, allNodes, onConfirm, onClose }: Co
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-foreground hover:bg-accent rounded"
+              className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
             >
               {t('common.cancel')}
             </button>
@@ -151,12 +160,23 @@ export function ContextPanel({ currentNodeId, allNodes, onConfirm, onClose }: Co
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
-                handleConfirm()
+                handleDirectExpand()
               }}
               disabled={selectedIds.size === 0}
-              className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 text-sm font-medium border border-border bg-background text-foreground hover:bg-accent rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {t('context.confirm')}
+              {t('node.selection.direct')}
+            </button>
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                handleTargetedQuestion()
+              }}
+              disabled={selectedIds.size === 0}
+              className="px-4 py-2 text-sm font-medium border border-border bg-background text-foreground hover:bg-accent rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {t('node.selection.targeted')}
             </button>
           </div>
         </div>

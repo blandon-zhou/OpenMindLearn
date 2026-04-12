@@ -1,12 +1,11 @@
 import type { NodeImage } from '../../types/index.js'
 
-export type ExpandMode = 'direct' | 'targeted' | 'custom_context'
+export type ExpandMode = 'direct' | 'targeted'
 export type ApiStyle = 'openai_chat' | 'google_gemini' | 'anthropic' | 'openai_response'
 
 export interface PromptTemplates {
   directExpand: string
   targetedQuestion: string
-  customContextExpand: string
   contextEnvelope: string
 }
 

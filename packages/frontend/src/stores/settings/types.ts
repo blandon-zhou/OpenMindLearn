@@ -1,6 +1,6 @@
 import type { LocaleCode, LocaleMode } from '../../i18n/types'
 
-export type ExpandMode = 'direct' | 'targeted' | 'custom_context'
+export type ExpandMode = 'direct' | 'targeted'
 export type ThemeMode = 'light' | 'dark'
 export type ApiStyle = 'openai_chat' | 'google_gemini' | 'anthropic' | 'openai_response'
 export type SecretProvider = 'os_keychain' | 'webcrypto'
@@ -32,7 +32,6 @@ export interface LLMProfile {
 export interface PromptTemplates {
   directExpand: string
   targetedQuestion: string
-  customContextExpand: string
   contextEnvelope: string
 }
 

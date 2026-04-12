@@ -11,6 +11,7 @@ export function useNodeCardSelection() {
   const [showPromptInput, setShowPromptInput] = useState(false)
   const [customPrompt, setCustomPrompt] = useState('')
   const [showContextPanel, setShowContextPanel] = useState(false)
+  const [selectedContextNodeIds, setSelectedContextNodeIds] = useState<string[] | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
 
   const handleTextSelection = useCallback((isReadOnly: boolean, isEditing: boolean) => {
@@ -48,6 +49,7 @@ export function useNodeCardSelection() {
       text: selectedText,
       sourceRef
     })
+    setSelectedContextNodeIds(null)
   }, [])
 
   // Close selection menu on click outside
@@ -73,8 +75,9 @@ export function useNodeCardSelection() {
     const { text, sourceRef } = selectionMenu
     setSelectionMenu(null)
     window.getSelection()?.removeAllRanges()
-    await onExpand(text, undefined, sourceRef, 'direct')
-  }, [selectionMenu])
+    await onExpand(text, selectedContextNodeIds || undefined, sourceRef, 'direct')
+    setSelectedContextNodeIds(null)
+  }, [selectionMenu, selectedContextNodeIds])
 
   const handleCustomPrompt = useCallback(() => {
     if (!selectionMenu) return
@@ -91,21 +94,32 @@ export function useNodeCardSelection() {
     setShowContextPanel(true)
   }, [selectionMenu])
 
+  const handleContextConfirm = useCallback((nodeIds: string[]) => {
+    setSelectedContextNodeIds(nodeIds)
+    setShowContextPanel(false)
+  }, [])
+
+  const closeContextPanel = useCallback(() => {
+    setShowContextPanel(false)
+  }, [])
+
   const handleSubmitCustomPrompt = useCallback(async (onExpand: (text: string, selectedNodeIds?: string[], sourceRef?: SourceReference, expandMode?: ExpandMode) => void) => {
     if (!customPrompt.trim()) return
     const sourceRef = selectionMenu?.sourceRef
     setSelectionMenu(null)
     setShowPromptInput(false)
     window.getSelection()?.removeAllRanges()
-    await onExpand(customPrompt, undefined, sourceRef, 'targeted')
+    await onExpand(customPrompt, selectedContextNodeIds || undefined, sourceRef, 'targeted')
     setCustomPrompt('')
-  }, [customPrompt, selectionMenu])
+    setSelectedContextNodeIds(null)
+  }, [customPrompt, selectionMenu, selectedContextNodeIds])
 
   const clearSelection = useCallback(() => {
     setSelectionMenu(null)
     setShowPromptInput(false)
     setCustomPrompt('')
     setShowContextPanel(false)
+    setSelectedContextNodeIds(null)
     window.getSelection()?.removeAllRanges()
   }, [])
 
@@ -113,6 +127,7 @@ export function useNodeCardSelection() {
     setSelectionMenu(null)
     setShowPromptInput(false)
     setShowContextPanel(false)
+    setSelectedContextNodeIds(null)
   }, [])
 
   return {
@@ -122,13 +137,16 @@ export function useNodeCardSelection() {
     customPrompt,
     setCustomPrompt,
     showContextPanel,
+    selectedContextNodeIds,
     setShowContextPanel,
     setSelectionMenu,
     handleTextSelection,
     handleDirectExpand,
     handleCustomPrompt,
     handleContextExpand,
+    handleContextConfirm,
     handleSubmitCustomPrompt,
+    closeContextPanel,
     clearSelection,
     clearReadOnlyState,
   }

@@ -36,9 +36,6 @@ export function upgradeLegacyPromptDefaults<T extends LegacyPromptSettingsShape>
   if (!promptTemplates.targetedQuestion || promptTemplates.targetedQuestion === LEGACY_PROMPT_TEMPLATES.targetedQuestion) {
     nextTemplates.targetedQuestion = DEFAULT_PROMPT_TEMPLATES_BY_LOCALE['zh-CN'].targetedQuestion
   }
-  if (!promptTemplates.customContextExpand || promptTemplates.customContextExpand === LEGACY_PROMPT_TEMPLATES.customContextExpand) {
-    nextTemplates.customContextExpand = DEFAULT_PROMPT_TEMPLATES_BY_LOCALE['zh-CN'].customContextExpand
-  }
   if (isLegacyValue(promptTemplates.contextEnvelope, [LEGACY_PROMPT_TEMPLATES.contextEnvelope, PREVIOUS_CONTEXT_ENVELOPE])) {
     nextTemplates.contextEnvelope = DEFAULT_PROMPT_TEMPLATES_BY_LOCALE['zh-CN'].contextEnvelope
   }

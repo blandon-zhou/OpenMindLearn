@@ -530,15 +530,19 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
         <ContextPanel
           currentNodeId={data.nodeId}
           allNodes={data.allNodes}
-          onConfirm={(selectedNodeIds) => {
+          onDirectExpand={(selectedNodeIds) => {
             const text = selection.selectionMenu?.text
             const sourceRef = selection.selectionMenu?.sourceRef
             selection.clearSelection()
             if (text) {
-              data.onExpand(text, selectedNodeIds, sourceRef, 'custom_context')
+              data.onExpand(text, selectedNodeIds, sourceRef, 'direct')
             }
           }}
-          onClose={() => selection.clearSelection()}
+          onTargetedQuestion={(selectedNodeIds) => {
+            selection.handleContextConfirm(selectedNodeIds)
+            selection.handleCustomPrompt()
+          }}
+          onClose={selection.closeContextPanel}
         />,
         document.body
       )}
