@@ -387,6 +387,7 @@ export function Canvas() {
           })
           throw error
         }
+        const message = error instanceof Error ? error.message : t('settings.toast.modelsLoadUnknown')
         setNodes((nds) => {
           const now = new Date().toISOString()
           const nextNodes = nds.map((node) =>
@@ -395,7 +396,7 @@ export function Canvas() {
                   ...node,
                   data: {
                     ...node.data,
-                    content: t('canvas.toast.firstNodeGenerateFailed'),
+                    content: `${t('canvas.toast.firstNodeGenerateFailed')}\n${message}`,
                     thinking: '',
                     question: prompt,
                     isGenerating: false,
@@ -452,8 +453,9 @@ export function Canvas() {
       showToast(t('canvas.toast.firstNodeGenerated'), 'success')
     } catch (error) {
       if (isAbortError(error)) return
+      const message = error instanceof Error ? error.message : t('settings.toast.modelsLoadUnknown')
       console.error(t('canvas.toast.firstNodeGenerateFailed'), error)
-      showToast(t('canvas.toast.firstNodeGenerateFailed'), 'error')
+      showToast(t('toast.nodeGenerateFailedWithMessage', { message }), 'error')
     } finally {
       setInitialGenerating(false)
     }
@@ -475,8 +477,9 @@ export function Canvas() {
         await run
       } catch (error) {
         if (isAbortError(error)) return
+        const message = error instanceof Error ? error.message : t('settings.toast.modelsLoadUnknown')
         console.error(t('canvas.toast.firstNodeGenerateFailed'), error)
-        showToast(t('canvas.toast.firstNodeGenerateFailed'), 'error')
+        showToast(t('toast.nodeGenerateFailedWithMessage', { message }), 'error')
       } finally {
         setChatSubmitting(false)
       }

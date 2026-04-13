@@ -169,6 +169,9 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
     setLoading(true)
     try {
       await data.onGenerate(content)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('settings.toast.modelsLoadUnknown')
+      showToast(t('toast.nodeGenerateFailedWithMessage', { message }), 'error')
     } finally {
       setLoading(false)
     }

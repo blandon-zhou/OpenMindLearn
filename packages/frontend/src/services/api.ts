@@ -4,9 +4,18 @@ import type { ApiStyle, ExpandMode, PromptTemplates } from '../stores/settingsSt
 const API_BASE = window.omlDesktop?.apiBase || '/api'
 
 async function parseJsonOrThrow(res: Response) {
-  const data = await res.json()
+  const rawText = await res.text()
+  let data: any = null
+  if (rawText) {
+    try {
+      data = JSON.parse(rawText)
+    } catch {
+      data = null
+    }
+  }
   if (!res.ok) {
-    throw new Error(data?.error || `HTTP ${res.status}`)
+    const message = data?.error || data?.message || rawText || `HTTP ${res.status}`
+    throw new Error(String(message))
   }
   return data
 }
@@ -88,6 +97,13 @@ export async function updateLLMConfig(config: {
     body: JSON.stringify(config)
   })
   return parseJsonOrThrow(res)
+}
+
+export async function getRuntimeLLMConfigStatus() {
+  const res = await fetch(`${API_BASE}/config/llm/status`, {
+    method: 'GET'
+  })
+  return parseJsonOrThrow(res) as Promise<{ hasApiKey: boolean }>
 }
 
 export async function listAvailableModels(config: {

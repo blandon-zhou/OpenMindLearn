@@ -184,6 +184,10 @@ export function useCanvasNodes(
   const handleGenerate = useCallback(async (nodeId: string, content: string) => {
     const currentNode = getNodes().find((n) => n.id === nodeId)
     const images: NodeImage[] = (currentNode?.data?.images as NodeImage[]) || []
+    const currentEdges = getEdges()
+    const parentId = currentEdges.find((edge) => edge.target === nodeId)?.source
+    const allNodes: Node[] = buildNodeSnapshots(getNodes(), currentEdges)
+    const sourceRef = currentNode?.data?.sourceRef as SourceReference | undefined
     const controller = registerGenerationController(nodeId, new AbortController())
 
     setNodes((nds) =>
@@ -202,7 +206,19 @@ export function useCanvasNodes(
     )
 
     try {
-      const result = await generateNode(content, images.length > 0 ? images : undefined, controller.signal)
+      const result = parentId
+        ? await expandNode(
+            content,
+            parentId,
+            stripImagesFromNodes(allNodes),
+            undefined,
+            sourceRef,
+            'direct',
+            llmSettings.contextMaxDepth,
+            images.length > 0 ? images : undefined,
+            controller.signal
+          )
+        : await generateNode(content, images.length > 0 ? images : undefined, controller.signal)
       setNodes((nds) => {
         const now = new Date().toISOString()
         const nextNodes = nds.map((node) => {
@@ -215,6 +231,7 @@ export function useCanvasNodes(
               content: result.content,
               thinking: result.thinking || '',
               question: content,
+              sourceRef: result.sourceRef || node.data.sourceRef,
               isEditing: false,
               isGenerating: false,
               updatedAt: now,
@@ -260,7 +277,7 @@ export function useCanvasNodes(
     } finally {
       unregisterGenerationController(nodeId, controller)
     }
-  }, [getEdges, getNodes, refreshNodeRuntimeData, registerGenerationController, setNodes, unregisterGenerationController])
+  }, [getEdges, getNodes, llmSettings.contextMaxDepth, refreshNodeRuntimeData, registerGenerationController, setNodes, unregisterGenerationController])
 
   const handleExpand = useCallback((
     text: string,
@@ -396,6 +413,8 @@ export function useCanvasNodes(
           })
           return
         }
+        const errorMessage = error instanceof Error ? error.message : tFromSettings('settings.toast.modelsLoadUnknown')
+        showToast(tFromSettings('toast.nodeGenerateFailedWithMessage', { message: errorMessage }), 'error')
         console.error('Failed to expand node:', error)
         setNodes((nds) => {
           const nowUpdated = new Date().toISOString()
@@ -405,7 +424,7 @@ export function useCanvasNodes(
                   ...node,
                   data: {
                     ...node.data,
-                    content: tFromSettings('toast.nodeGenerateFailed'),
+                    content: `${tFromSettings('toast.nodeGenerateFailed')}\n${errorMessage}`,
                     thinking: '',
                     question: text,
                     updatedAt: nowUpdated,
@@ -423,7 +442,7 @@ export function useCanvasNodes(
     })()
 
     return newNodeId
-  }, [getNodes, getEdges, handleCancelNodeEdit, handleGenerate, handleAttachmentsChange, handleImagesChange, handleSaveNodeContent, llmSettings.contextMaxDepth, refreshNodeRuntimeData, registerGenerationController, setEdges, setNodes, stopNodeGeneration, unregisterGenerationController])
+  }, [getNodes, getEdges, handleCancelNodeEdit, handleGenerate, handleAttachmentsChange, handleImagesChange, handleSaveNodeContent, llmSettings.contextMaxDepth, refreshNodeRuntimeData, registerGenerationController, setEdges, setNodes, showToast, stopNodeGeneration, unregisterGenerationController])
 
   const createNodeAtPosition = useCallback(
     (

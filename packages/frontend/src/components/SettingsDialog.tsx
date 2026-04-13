@@ -11,6 +11,7 @@ import {
 } from '../stores/settingsStore'
 import type { LocaleCode, LocaleMode } from '../i18n/types'
 import { fetchProfileModels, getLLMProfileById, syncProfileToRuntime } from '../services/profileRuntime'
+import { getRuntimeLLMConfigStatus } from '../services/api'
 import { getSecret, removeSecret, setSecret } from '../services/secureSecret'
 import { useToastStore } from '../stores/toastStore'
 import { Copy, Moon, Plus, Sun, Trash2, X } from 'lucide-react'
@@ -130,6 +131,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [switchingProfileId, setSwitchingProfileId] = useState('')
   const [resolvedSecretHasApiKey, setResolvedSecretHasApiKey] = useState<boolean | null>(null)
+  const [runtimeHasApiKey, setRuntimeHasApiKey] = useState<boolean | null>(null)
 
   const selectedProfile = useMemo(() => {
     return llmSettings.profiles.find((profile) => profile.id === selectedProfileId) || llmSettings.profiles[0]
@@ -312,9 +314,51 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     }
   }, [open, selectedProfileId])
 
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+
+    void (async () => {
+      try {
+        const status = await getRuntimeLLMConfigStatus()
+        if (cancelled) return
+        setRuntimeHasApiKey(Boolean(status?.hasApiKey))
+      } catch {
+        if (cancelled) return
+        setRuntimeHasApiKey(null)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, llmSettings.activeProfileId])
+
   if (!open || !selectedProfile) return null
 
   const hasStoredApiKey = resolvedSecretHasApiKey ?? selectedProfile.secret.hasApiKey
+  const isSelectedProfileActive = selectedProfile.id === llmSettings.activeProfileId
+  const hasRuntimeApiKeyForSelected = isSelectedProfileActive && Boolean(runtimeHasApiKey)
+  const hasEffectiveApiKey = hasStoredApiKey || hasRuntimeApiKeyForSelected
+
+  const hasApiKeyForProfile = (profileId: string): boolean => {
+    const profile = llmSettings.profiles.find((item) => item.id === profileId)
+    if (!profile) return false
+    if (profile.id === selectedProfile.id) {
+      return resolvedSecretHasApiKey ?? profile.secret.hasApiKey
+    }
+    if (profile.id === llmSettings.activeProfileId && runtimeHasApiKey) {
+      return true
+    }
+    return profile.secret.hasApiKey
+  }
+
+  const isProfileReady = (profileId: string): boolean => {
+    const profile = llmSettings.profiles.find((item) => item.id === profileId)
+    if (!profile) return false
+    const hasApiKey = hasApiKeyForProfile(profileId)
+    return Boolean(profile.config.baseURL.trim() && profile.config.model.trim() && hasApiKey)
+  }
 
   const parseNumber = (
     value: string,
@@ -354,7 +398,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
       return
     }
 
-    if (!apiKeyInput.trim() && !hasStoredApiKey) {
+    if (!apiKeyInput.trim() && !hasEffectiveApiKey) {
       if (!silent) showToast(t('settings.toast.modelsNeedConfig'), 'error')
       return
     }
@@ -629,6 +673,10 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                       const isActive = profile.id === llmSettings.activeProfileId
                       const isSelected = profile.id === selectedProfile.id
                       const isSwitching = switchingProfileId === profile.id
+                      const ready = isProfileReady(profile.id)
+                      const readyLabel = ready
+                        ? t('settings.profile.status.ready')
+                        : t('settings.profile.status.notReady')
 
                       return (
                         <div
@@ -643,6 +691,11 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                             className="min-w-0 text-left flex-1"
                           >
                             <div className="flex items-center gap-2">
+                              <span
+                                className={`inline-block w-2 h-2 rounded-full ${ready ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                                title={readyLabel}
+                                aria-label={readyLabel}
+                              />
                               <span className="text-sm font-medium truncate">{profile.name}</span>
                               {isActive && (
                                 <span className="text-[11px] px-1.5 py-0.5 rounded bg-primary/15 text-primary">
@@ -1092,6 +1145,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                         ? t('settings.apiKey.clearPending')
                         : hasStoredApiKey
                           ? t('settings.apiKey.saved')
+                          : hasRuntimeApiKeyForSelected
+                            ? t('settings.apiKey.runtimeLoaded')
                           : t('settings.apiKey.empty')}
                     </span>
                   </div>

@@ -45,7 +45,15 @@ export async function syncActiveProfileToRuntime(llmSettings: LLMSettings) {
 }
 
 export async function fetchProfileModels(profile: LLMProfile, overrideApiKey?: string) {
-  const apiKey = (overrideApiKey || '').trim() || await resolveProfileApiKey(profile)
+  let apiKey = (overrideApiKey || '').trim()
+  if (!apiKey) {
+    try {
+      apiKey = await resolveProfileApiKey(profile)
+    } catch {
+      // Allow backend runtime fallback when profile secret is not readable locally.
+      apiKey = ''
+    }
+  }
   return listAvailableModels({
     apiKey,
     baseURL: profile.config.baseURL,

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronsUpDown } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { getLLMProfileById, syncProfileToRuntime } from '../services/profileRuntime'
+import { getRuntimeLLMConfigStatus } from '../services/api'
 import { useToastStore } from '../stores/toastStore'
 import { useI18n } from '../hooks/useI18n'
 
@@ -13,6 +14,7 @@ export function ProfileSwitcher() {
   const [open, setOpen] = useState(false)
   const [keyword, setKeyword] = useState('')
   const [switchingProfileId, setSwitchingProfileId] = useState('')
+  const [runtimeHasApiKey, setRuntimeHasApiKey] = useState<boolean | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
   const activeProfile = useMemo(
@@ -34,6 +36,37 @@ export function ProfileSwitcher() {
       return payload.some((value) => value.toLowerCase().includes(normalizedKeyword))
     })
   }, [keyword, llmSettings.profiles])
+
+  const isProfileReady = (profileId: string): boolean => {
+    const profile = getLLMProfileById(llmSettings, profileId)
+    if (!profile) return false
+    const hasRuntimeForActive = profile.id === llmSettings.activeProfileId && Boolean(runtimeHasApiKey)
+    const hasApiKey = profile.secret.hasApiKey || hasRuntimeForActive
+    return Boolean(profile.config.baseURL.trim() && profile.config.model.trim() && hasApiKey)
+  }
+
+  const activeProfileReady = activeProfile ? isProfileReady(activeProfile.id) : false
+  const activeProfileStatusLabel = activeProfileReady
+    ? t('settings.profile.status.ready')
+    : t('settings.profile.status.notReady')
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const status = await getRuntimeLLMConfigStatus()
+        if (cancelled) return
+        setRuntimeHasApiKey(Boolean(status?.hasApiKey))
+      } catch {
+        if (cancelled) return
+        setRuntimeHasApiKey(null)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [llmSettings.activeProfileId])
 
   useEffect(() => {
     if (!open) return
@@ -78,8 +111,12 @@ export function ProfileSwitcher() {
         type="button"
         onClick={() => setOpen((value) => !value)}
         className="inline-flex items-center gap-2 px-3 py-1.5 border border-border rounded text-sm hover:bg-accent"
-        title={t('toolbar.profile.title')}
+        title={`${t('toolbar.profile.title')} · ${activeProfileStatusLabel}`}
       >
+        <span
+          className={`inline-block w-2 h-2 rounded-full ${activeProfileReady ? 'bg-emerald-500' : 'bg-rose-500'}`}
+          aria-label={activeProfileStatusLabel}
+        />
         <span>{t('toolbar.profile.button', { name: activeProfile?.name || '-' })}</span>
         <ChevronsUpDown className="w-4 h-4 text-muted-foreground" />
       </button>
@@ -102,6 +139,10 @@ export function ProfileSwitcher() {
               filteredProfiles.map((profile) => {
                 const isActive = profile.id === llmSettings.activeProfileId
                 const isSwitching = switchingProfileId === profile.id
+                const ready = isProfileReady(profile.id)
+                const readyLabel = ready
+                  ? t('settings.profile.status.ready')
+                  : t('settings.profile.status.notReady')
 
                 return (
                   <button
@@ -114,7 +155,12 @@ export function ProfileSwitcher() {
                     } disabled:opacity-60`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium truncate">
+                      <span className="text-sm font-medium truncate inline-flex items-center gap-2">
+                        <span
+                          className={`inline-block w-2 h-2 rounded-full ${ready ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                          title={readyLabel}
+                          aria-label={readyLabel}
+                        />
                         {profile.name}
                       </span>
                       <span className="text-[11px] text-muted-foreground shrink-0">
@@ -136,4 +182,3 @@ export function ProfileSwitcher() {
     </div>
   )
 }
-

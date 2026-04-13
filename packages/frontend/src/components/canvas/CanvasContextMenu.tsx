@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Download, Eye, History, MessageSquareText, Pencil, Plus, RefreshCw, Tags } from 'lucide-react'
 import { MenuItem } from '../MenuItem'
 import type { ContextMenuState } from '../../types/canvas'
@@ -29,13 +30,49 @@ export function CanvasContextMenu({
   onClose,
   t
 }: CanvasContextMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!contextMenu) {
+      setPosition(null)
+      return
+    }
+
+    const updatePosition = () => {
+      const menu = menuRef.current
+      const fallback = { top: contextMenu.y, left: contextMenu.x }
+      if (!menu) {
+        setPosition(fallback)
+        return
+      }
+
+      const rect = menu.getBoundingClientRect()
+      const viewportWidth = window.innerWidth
+      const viewportHeight = window.innerHeight
+      const margin = 8
+      const nextTop = Math.max(margin, Math.min(contextMenu.y, viewportHeight - rect.height - margin))
+      const nextLeft = Math.max(margin, Math.min(contextMenu.x, viewportWidth - rect.width - margin))
+
+      setPosition((prev) => {
+        if (prev && prev.top === nextTop && prev.left === nextLeft) return prev
+        return { top: nextTop, left: nextLeft }
+      })
+    }
+
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    return () => window.removeEventListener('resize', updatePosition)
+  }, [contextMenu])
+
   if (!contextMenu) return null
 
   return (
     <div
+      ref={menuRef}
       data-state="open"
-      className="fixed z-[9999] min-w-[220px] rounded-lg border border-border bg-background text-foreground shadow-lg py-1"
-      style={{ top: contextMenu.y, left: contextMenu.x }}
+      className="fixed z-[9999] min-w-[220px] max-h-[calc(100vh-16px)] overflow-y-auto rounded-lg border border-border bg-background text-foreground shadow-lg py-1"
+      style={{ top: position?.top ?? contextMenu.y, left: position?.left ?? contextMenu.x }}
       onClick={(e) => e.stopPropagation()}
     >
       {contextMenu.type === 'pane' && contextMenu.flowPosition && (
