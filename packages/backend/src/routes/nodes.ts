@@ -102,10 +102,11 @@ export async function nodeRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post('/api/config/models', async (request, reply) => {
-    const { apiKey, baseURL, apiStyle } = request.body as {
+    const { apiKey, baseURL, apiStyle, modelsPath } = request.body as {
       apiKey?: string
       baseURL?: string
       apiStyle?: ApiStyle
+      modelsPath?: string
     }
 
     try {
@@ -113,7 +114,8 @@ export async function nodeRoutes(fastify: FastifyInstance) {
       const models = await listAvailableModels({
         apiKey: apiKey || runtime.apiKey,
         baseURL: baseURL || runtime.baseURL,
-        apiStyle: apiStyle || runtime.apiStyle
+        apiStyle: apiStyle || runtime.apiStyle,
+        modelsPath
       })
       return { models }
     } catch (error) {

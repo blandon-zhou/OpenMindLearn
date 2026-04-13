@@ -123,6 +123,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
         const profileConfigPatch: Partial<LLMProfileConfig> = {}
         if (settings.baseURL !== undefined) profileConfigPatch.baseURL = settings.baseURL
+        if (settings.modelsPath !== undefined) profileConfigPatch.modelsPath = settings.modelsPath
         if (settings.model !== undefined) profileConfigPatch.model = settings.model
         if (settings.apiStyle !== undefined) profileConfigPatch.apiStyle = settings.apiStyle
         if (settings.temperature !== undefined) profileConfigPatch.temperature = settings.temperature

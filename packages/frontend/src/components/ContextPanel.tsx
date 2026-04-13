@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { X, Check } from 'lucide-react'
 import { Node } from '../types'
 import { useI18n } from '../hooks/useI18n'
+import { Z_INDEX } from '../utils/zIndex'
 
 interface ContextPanelProps {
   currentNodeId: string
@@ -83,7 +84,8 @@ export function ContextPanel({ currentNodeId, allNodes, onDirectExpand, onTarget
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center"
+      style={{ zIndex: Z_INDEX.canvasModal }}
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose()

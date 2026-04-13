@@ -16,6 +16,7 @@ import { getSecret, removeSecret, setSecret } from '../services/secureSecret'
 import { useToastStore } from '../stores/toastStore'
 import { Copy, Moon, Plus, Sun, Trash2, X } from 'lucide-react'
 import { useI18n } from '../hooks/useI18n'
+import { Z_INDEX } from '../utils/zIndex'
 
 interface SettingsDialogProps {
   open: boolean
@@ -105,6 +106,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [clearApiKeyOnSave, setClearApiKeyOnSave] = useState(false)
   const [baseURL, setBaseURL] = useState('')
+  const [modelsPath, setModelsPath] = useState('')
   const [model, setModel] = useState('')
   const [apiStyle, setApiStyle] = useState<ApiStyle>('openai_chat')
   const [temperature, setTemperature] = useState('0.7')
@@ -125,6 +127,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [isLoadingModels, setIsLoadingModels] = useState(false)
   const [isModelLibraryOpen, setIsModelLibraryOpen] = useState(false)
   const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false)
+  const [showModelsPathHelp, setShowModelsPathHelp] = useState(false)
   const [profileSearchKeyword, setProfileSearchKeyword] = useState('')
   const [modelSearchKeyword, setModelSearchKeyword] = useState('')
   const [isSaving, setIsSaving] = useState(false)
@@ -179,6 +182,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     setLocaleModeState(uiSettings.localeMode)
     setIsProfileEditorOpen(false)
     setIsModelLibraryOpen(false)
+    setShowModelsPathHelp(false)
     setSwitchingProfileId('')
     setProfileSearchKeyword('')
     setModelSearchKeyword('')
@@ -197,12 +201,14 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     setApiKeyInput('')
     setClearApiKeyOnSave(false)
     setBaseURL(profile.config.baseURL)
+    setModelsPath(profile.config.modelsPath || '')
     setModel(profile.config.model)
     setApiStyle(profile.config.apiStyle)
     setTemperature(String(profile.config.temperature))
     setMaxTokens(String(profile.config.maxTokens))
     setModelOptions(profile.modelOptionsCache || [])
     setModelSearchKeyword(profile.config.model)
+    setShowModelsPathHelp(false)
   }, [open, selectedProfileId])
 
   const previewRendered = useMemo(() => {
@@ -388,6 +394,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
       config: {
         ...selectedProfile.config,
         baseURL: baseURL.trim(),
+        modelsPath: modelsPath.trim(),
         model: model.trim(),
         apiStyle
       }
@@ -485,6 +492,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     const nextTemperature = parseNumber(temperature, selectedProfile.config.temperature, 0, 2)
     const nextMaxTokens = parseNumber(maxTokens, selectedProfile.config.maxTokens, 1, UNBOUNDED_MAX_TOKENS, true)
     const nextBaseURL = baseURL.trim()
+    const nextModelsPath = modelsPath.trim()
     const nextModel = model.trim()
 
     if (nextName && nextName !== selectedProfile.name) {
@@ -494,6 +502,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
     updateLLMProfileConfig(selectedProfile.id, {
       baseURL: nextBaseURL,
+      modelsPath: nextModelsPath,
       model: nextModel,
       apiStyle,
       temperature: nextTemperature,
@@ -602,7 +611,11 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div
+      className="fixed inset-0 flex items-center justify-center bg-black/50"
+      style={{ zIndex: Z_INDEX.settingsModal }}
+      onClick={onClose}
+    >
       <div className="bg-background text-foreground rounded-lg border border-border shadow-lg w-[820px] max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">{t('settings.title')}</h2>
@@ -1023,7 +1036,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
       {previewSource && previewRendered && (
         <div
-          className="fixed inset-0 z-[12005] flex items-center justify-center bg-black/40"
+          className="fixed inset-0 flex items-center justify-center bg-black/40"
+          style={{ zIndex: Z_INDEX.settingsPreviewModal }}
           onClick={(e) => {
             e.stopPropagation()
             setPreviewSource(null)
@@ -1099,7 +1113,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
       {isProfileEditorOpen && (
         <div
-          className="fixed inset-0 z-[12010] flex items-center justify-center bg-black/40"
+          className="fixed inset-0 flex items-center justify-center bg-black/40"
+          style={{ zIndex: Z_INDEX.settingsProfileEditorModal }}
           onClick={(e) => {
             e.stopPropagation()
             setIsProfileEditorOpen(false)
@@ -1190,9 +1205,45 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <label className="block text-sm font-medium">{t('settings.model')}</label>
                     <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={modelsPath}
+                        onChange={(e) => setModelsPath(e.target.value)}
+                        className="h-8 w-[220px] max-w-[40vw] px-2 text-xs border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        aria-label={t('settings.model.path')}
+                        placeholder={t('settings.model.path.placeholder')}
+                      />
+                      <div className="relative">
+                        <button
+                          type="button"
+                          className="h-6 w-6 rounded-full border border-border text-xs text-muted-foreground hover:bg-accent"
+                          aria-label={t('settings.model.path.help')}
+                          aria-describedby={showModelsPathHelp ? 'models-path-help-tooltip' : undefined}
+                          onMouseEnter={() => setShowModelsPathHelp(true)}
+                          onMouseLeave={() => setShowModelsPathHelp(false)}
+                          onFocus={() => setShowModelsPathHelp(true)}
+                          onBlur={() => setShowModelsPathHelp(false)}
+                          onClick={() => setShowModelsPathHelp((prev) => !prev)}
+                        >
+                          ?
+                        </button>
+                        {showModelsPathHelp && (
+                          <div
+                            id="models-path-help-tooltip"
+                            role="tooltip"
+                            className="absolute right-0 top-full mt-1 w-[320px] max-w-[70vw] rounded border border-border bg-background px-2.5 py-2 text-[11px] leading-relaxed text-muted-foreground shadow-lg"
+                            style={{ zIndex: Z_INDEX.settingsTooltip }}
+                          >
+                            {t('settings.model.path.help')}
+                          </div>
+                        )}
+                      </div>
                       <button
                         type="button"
-                        onClick={() => void loadModelOptions()}
+                        onClick={() => {
+                          setShowModelsPathHelp(false)
+                          void loadModelOptions()
+                        }}
                         className={RESET_BUTTON_CLASS}
                         disabled={isLoadingModels}
                       >
@@ -1200,7 +1251,10 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setIsModelLibraryOpen(true)}
+                        onClick={() => {
+                          setShowModelsPathHelp(false)
+                          setIsModelLibraryOpen(true)
+                        }}
                         className={RESET_BUTTON_CLASS}
                       >
                         {t('settings.model.library.open')}
@@ -1293,7 +1347,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
       {isProfileEditorOpen && isModelLibraryOpen && (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40"
+          className="fixed inset-0 flex items-center justify-center bg-black/40"
+          style={{ zIndex: Z_INDEX.settingsModelLibraryModal }}
           onClick={(e) => {
             e.stopPropagation()
             setIsModelLibraryOpen(false)

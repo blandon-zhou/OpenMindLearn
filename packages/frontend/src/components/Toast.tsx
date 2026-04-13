@@ -1,5 +1,6 @@
 import { useToastStore } from '../stores/toastStore'
 import { CheckCircle2, XCircle, X } from 'lucide-react'
+import { Z_INDEX } from '../utils/zIndex'
 
 export function Toast() {
   const { message, type, visible, hideToast } = useToastStore()
@@ -7,7 +8,7 @@ export function Toast() {
   if (!visible) return null
 
   return (
-    <div className="fixed top-4 right-4 z-[10001] animate-in slide-in-from-top-2">
+    <div className="fixed top-4 right-4 animate-in slide-in-from-top-2" style={{ zIndex: Z_INDEX.toast }}>
       <div className={`flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg border ${
         type === 'success'
           ? 'bg-green-50 border-green-200 dark:bg-green-950/45 dark:border-green-800'

@@ -110,6 +110,7 @@ export async function listAvailableModels(config: {
   apiKey: string
   baseURL: string
   apiStyle: ApiStyle
+  modelsPath?: string
 }) {
   const res = await fetch(`${API_BASE}/config/models`, {
     method: 'POST',

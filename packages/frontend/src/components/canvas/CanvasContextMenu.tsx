@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { Download, Eye, History, MessageSquareText, Pencil, Plus, RefreshCw, Tags } from 'lucide-react'
 import { MenuItem } from '../MenuItem'
 import type { ContextMenuState } from '../../types/canvas'
+import { Z_INDEX } from '../../utils/zIndex'
 
 interface CanvasContextMenuProps {
   contextMenu: ContextMenuState | null
@@ -71,8 +72,8 @@ export function CanvasContextMenu({
     <div
       ref={menuRef}
       data-state="open"
-      className="fixed z-[9999] min-w-[220px] max-h-[calc(100vh-16px)] overflow-y-auto rounded-lg border border-border bg-background text-foreground shadow-lg py-1"
-      style={{ top: position?.top ?? contextMenu.y, left: position?.left ?? contextMenu.x }}
+      className="fixed min-w-[220px] max-h-[calc(100vh-16px)] overflow-y-auto rounded-lg border border-border bg-background text-foreground shadow-lg py-1"
+      style={{ zIndex: Z_INDEX.canvasContextMenu, top: position?.top ?? contextMenu.y, left: position?.left ?? contextMenu.x }}
       onClick={(e) => e.stopPropagation()}
     >
       {contextMenu.type === 'pane' && contextMenu.flowPosition && (

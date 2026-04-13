@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { ZoomIn, ZoomOut, RotateCcw, X } from 'lucide-react'
 import { useI18n } from '../hooks/useI18n'
+import { Z_INDEX } from '../utils/zIndex'
 
 interface ImageLightboxProps {
   src: string
@@ -69,7 +70,8 @@ export function ImageLightbox({ src, onClose }: ImageLightboxProps) {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[10001] bg-black/85 flex flex-col"
+      className="fixed inset-0 bg-black/85 flex flex-col"
+      style={{ zIndex: Z_INDEX.canvasLightbox }}
       onClick={onClose}
     >
       {/* Toolbar */}

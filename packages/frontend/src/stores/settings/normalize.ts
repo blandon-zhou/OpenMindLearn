@@ -124,6 +124,7 @@ export function normalizeLocalizedPrompt(locale: LocaleCode, source?: Partial<Lo
 export function normalizeLLMProfileConfig(source?: Partial<LLMProfileConfig>): LLMProfileConfig {
   return {
     baseURL: (source?.baseURL || '').trim(),
+    modelsPath: (source?.modelsPath || '').trim(),
     model: (source?.model || '').trim(),
     apiStyle: normalizeApiStyle(source?.apiStyle),
     temperature: normalizeNumber(source?.temperature, DEFAULT_TEMPERATURE, 0, 2),
@@ -195,6 +196,7 @@ export function ensureActiveProfileState(settings: LLMSettings): LLMSettings {
     profiles,
     activeProfileId,
     baseURL: activeProfile.config.baseURL,
+    modelsPath: activeProfile.config.modelsPath,
     model: activeProfile.config.model,
     apiStyle: activeProfile.config.apiStyle,
     temperature: activeProfile.config.temperature,
@@ -233,6 +235,7 @@ export function normalizeLLMSettings(settings?: Partial<LLMSettings> | Record<st
     activeProfileId: resolveActiveProfileId(upgraded.activeProfileId, profiles),
     profiles,
     baseURL: '',
+    modelsPath: '',
     model: '',
     apiStyle: 'openai_chat',
     temperature: DEFAULT_TEMPERATURE,

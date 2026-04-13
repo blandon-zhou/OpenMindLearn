@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import type { DiffLine, VersionDialogState } from '../../types/canvas'
 import { cn } from '../../utils/cn'
+import { Z_INDEX } from '../../utils/zIndex'
 
 interface VersionDialogProps {
   versionDialog: VersionDialogState | null
@@ -25,7 +26,8 @@ export function VersionDialog({
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 z-[10000] flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/40 flex items-center justify-center p-4"
+      style={{ zIndex: Z_INDEX.canvasModal }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}

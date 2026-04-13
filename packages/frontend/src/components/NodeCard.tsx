@@ -17,6 +17,7 @@ import { formatFileSize, readFilesAsNodeAttachments, downloadNodeAttachment } fr
 import { getContainerPlainText, clearSourceHighlightMarks, applySourceHighlightByRanges } from '../utils/sourceHighlight'
 import { useNodeCardSelection } from '../hooks/useNodeCardSelection'
 import { useI18n } from '../hooks/useI18n'
+import { Z_INDEX } from '../utils/zIndex'
 
 export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
   const isReadOnly = data.mode === 'view'
@@ -459,8 +460,9 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
 
       {selection.selectionMenu && !selection.showPromptInput && !selection.showContextPanel && createPortal(
         <div
-          className="selection-menu fixed z-[10000] bg-background text-foreground rounded-lg shadow-lg border border-border p-1 flex gap-1"
+          className="selection-menu fixed bg-background text-foreground rounded-lg shadow-lg border border-border p-1 flex gap-1"
           style={{
+            zIndex: Z_INDEX.canvasSelectionMenu,
             left: selection.selectionMenu.x,
             top: selection.selectionMenu.y,
             transform: 'translateX(-50%)'
@@ -490,8 +492,9 @@ export const NodeCard = memo(({ data, selected }: NodeCardProps) => {
 
       {selection.showPromptInput && selection.selectionMenu && createPortal(
         <div
-          className="selection-menu fixed z-[10000] bg-background text-foreground rounded-lg shadow-lg border border-border p-3"
+          className="selection-menu fixed bg-background text-foreground rounded-lg shadow-lg border border-border p-3"
           style={{
+            zIndex: Z_INDEX.canvasSelectionMenu,
             left: selection.selectionMenu.x,
             top: selection.selectionMenu.y,
             transform: 'translateX(-50%)',

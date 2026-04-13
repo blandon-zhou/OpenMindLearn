@@ -7,6 +7,7 @@ export type SecretProvider = 'os_keychain' | 'webcrypto'
 
 export interface LLMProfileConfig {
   baseURL: string
+  modelsPath: string
   model: string
   apiStyle: ApiStyle
   temperature: number
@@ -45,6 +46,7 @@ export interface LLMSettings {
   activeProfileId: string
   profiles: LLMProfile[]
   baseURL: string
+  modelsPath: string
   model: string
   apiStyle: ApiStyle
   temperature: number

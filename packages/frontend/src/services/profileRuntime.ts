@@ -57,6 +57,7 @@ export async function fetchProfileModels(profile: LLMProfile, overrideApiKey?: s
   return listAvailableModels({
     apiKey,
     baseURL: profile.config.baseURL,
-    apiStyle: profile.config.apiStyle
+    apiStyle: profile.config.apiStyle,
+    modelsPath: profile.config.modelsPath
   })
 }

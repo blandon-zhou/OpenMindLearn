@@ -6,10 +6,34 @@ interface ModelListConfig {
   apiKey?: string
   baseURL?: string
   apiStyle?: ApiStyle | string
+  modelsPath?: string
 }
 
 function withNoTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '')
+}
+
+function withBaseVariants(value: string): string[] {
+  const normalized = withNoTrailingSlash(value)
+  if (!normalized) return []
+  if (normalized.endsWith('/v1')) {
+    return [normalized, normalized.slice(0, -3)].filter(Boolean)
+  }
+  return [normalized, `${normalized}/v1`].filter(Boolean)
+}
+
+function normalizeModelsPath(value: string | undefined): string {
+  const trimmed = (value || '').trim()
+  if (!trimmed) return 'models'
+  return trimmed.replace(/^\/+/, '').replace(/\/+$/, '') || 'models'
+}
+
+function joinBaseAndModelsPath(base: string, modelsPath: string): string {
+  if (base.endsWith('/v1') && modelsPath === 'v1') return base
+  if (base.endsWith('/v1') && modelsPath.startsWith('v1/')) {
+    return `${base}/${modelsPath.slice(3)}`
+  }
+  return `${base}/${modelsPath}`
 }
 
 function toGoogleBaseURL(baseURL: string): string {
@@ -55,10 +79,12 @@ function collectModelIds(data: any): string[] {
   return values
 }
 
-function buildModelListRequest(style: ApiStyle, baseURL: string, apiKey: string) {
+function buildModelListRequests(style: ApiStyle, baseURL: string, apiKey: string, modelsPath?: string) {
   const normalizedBase = style === 'google_gemini'
     ? toGoogleBaseURL(baseURL)
     : withNoTrailingSlash(baseURL)
+  const candidateBases = withBaseVariants(normalizedBase)
+  const normalizedPath = normalizeModelsPath(modelsPath)
 
   const headers: Record<string, string> = {}
   if (apiKey) {
@@ -70,32 +96,42 @@ function buildModelListRequest(style: ApiStyle, baseURL: string, apiKey: string)
     headers['anthropic-version'] = '2023-06-01'
   }
 
-  return {
-    url: `${normalizedBase}/models`,
+  return Array.from(new Set(candidateBases.map((base) => joinBaseAndModelsPath(base, normalizedPath)))).map((url) => ({
+    url,
     headers
-  }
+  }))
 }
 
 export async function listAvailableModels(config: ModelListConfig): Promise<string[]> {
   const apiKey = (config.apiKey || '').trim()
   const baseURL = (config.baseURL || '').trim()
   const style = normalizeApiStyle(config.apiStyle)
+  const modelsPath = (config.modelsPath || '').trim()
 
   if (!baseURL) throw new Error('请先填写 Base URL')
   if (!apiKey) throw new Error('请先填写 API Key')
 
-  const request = buildModelListRequest(style, baseURL, apiKey)
-  const response = await fetch(request.url, { method: 'GET', headers: request.headers })
-  const data = await parseResponseJson(response)
+  const requests = buildModelListRequests(style, baseURL, apiKey, modelsPath)
+  let lastErrorMessage = '未获取到可用模型，请检查 API 风格与 Base URL 是否匹配'
 
-  if (!response.ok) {
-    throw new Error(extractErrorMessage(data, `获取模型列表失败：HTTP ${response.status}`))
+  for (const request of requests) {
+    try {
+      const response = await fetch(request.url, { method: 'GET', headers: request.headers })
+      const data = await parseResponseJson(response)
+
+      if (!response.ok) {
+        lastErrorMessage = extractErrorMessage(data, `获取模型列表失败：HTTP ${response.status}`)
+        continue
+      }
+
+      const models = collectModelIds(data)
+      if (models.length > 0) return models
+
+      lastErrorMessage = '未获取到可用模型，请检查 API 风格与 Base URL 是否匹配'
+    } catch (error) {
+      lastErrorMessage = error instanceof Error ? error.message : '获取模型列表失败'
+    }
   }
 
-  const models = collectModelIds(data)
-  if (models.length === 0) {
-    throw new Error('未获取到可用模型，请检查 API 风格与 Base URL 是否匹配')
-  }
-
-  return models
+  throw new Error(`获取模型列表失败（已尝试带 /v1 与不带 /v1 两种路径）：${lastErrorMessage}`)
 }
