@@ -118,6 +118,8 @@ export const useSettingsStore = create<SettingsStore>()(
     (set) => ({
       llmSettings: DEFAULT_LLM_SETTINGS,
       uiSettings: DEFAULT_UI_SETTINGS,
+      runtimeSnapshot: null,
+      profileHealthById: {},
       updateLLMSettings: (settings: Partial<LLMSettings>) => set((state) => {
         let next = applyPromptPatch(state.llmSettings, settings)
 
@@ -152,7 +154,8 @@ export const useSettingsStore = create<SettingsStore>()(
             llmSettings: {
               ...state.llmSettings,
               profiles: [...state.llmSettings.profiles, profile]
-            }
+            },
+            profileHealthById: state.profileHealthById
           }
         })
         return createdId
@@ -181,12 +184,16 @@ export const useSettingsStore = create<SettingsStore>()(
           ? nextProfiles[0].id
           : state.llmSettings.activeProfileId
 
+        const nextProfileHealthById = { ...state.profileHealthById }
+        delete nextProfileHealthById[profileId]
+
         return {
           llmSettings: ensureActiveProfileState({
             ...state.llmSettings,
             profiles: nextProfiles,
             activeProfileId: nextActiveProfileId
-          })
+          }),
+          profileHealthById: nextProfileHealthById
         }
       }),
       setActiveLLMProfile: (profileId: string) => set((state) => {
@@ -223,6 +230,18 @@ export const useSettingsStore = create<SettingsStore>()(
             )
           }
         }
+      }),
+      setRuntimeSnapshot: (snapshot) => set(() => ({ runtimeSnapshot: snapshot })),
+      setProfileHealth: (profileId, health) => set((state) => ({
+        profileHealthById: {
+          ...state.profileHealthById,
+          [profileId]: health
+        }
+      })),
+      removeProfileHealth: (profileId) => set((state) => {
+        const nextProfileHealthById = { ...state.profileHealthById }
+        delete nextProfileHealthById[profileId]
+        return { profileHealthById: nextProfileHealthById }
       }),
       updateUISettings: (settings) => set((state) => {
         const nextTheme = settings.theme ?? state.uiSettings.theme

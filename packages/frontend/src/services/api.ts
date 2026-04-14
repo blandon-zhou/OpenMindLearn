@@ -1,5 +1,11 @@
 import { Node, SourceReference, Region, NodeImage } from '../types'
-import type { ApiStyle, ExpandMode, PromptTemplates } from '../stores/settingsStore'
+import type {
+  ApiStyle,
+  ExpandMode,
+  ProfileHealth,
+  PromptTemplates,
+  RuntimeSnapshot
+} from '../stores/settingsStore'
 
 const API_BASE = window.omlDesktop?.apiBase || '/api'
 
@@ -80,7 +86,7 @@ export async function loadFile(base64Data: string) {
 }
 
 export async function updateLLMConfig(config: {
-  apiKey: string
+  apiKey?: string
   baseURL: string
   model: string
   apiStyle: ApiStyle
@@ -96,14 +102,60 @@ export async function updateLLMConfig(config: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config)
   })
-  return parseJsonOrThrow(res)
+  return parseJsonOrThrow(res) as Promise<{ success: boolean; hasApiKey: boolean }>
 }
 
 export async function getRuntimeLLMConfigStatus() {
   const res = await fetch(`${API_BASE}/config/llm/status`, {
     method: 'GET'
   })
-  return parseJsonOrThrow(res) as Promise<{ hasApiKey: boolean }>
+  return parseJsonOrThrow(res) as Promise<{
+    hasApiKey: boolean
+    runtimeSnapshot?: RuntimeSnapshot
+    health?: ProfileHealth
+  }>
+}
+
+export async function syncRuntimeLLMConfig(payload: {
+  profileId: string
+  config: {
+    baseURL: string
+    model: string
+    apiStyle: ApiStyle
+    answerAnchorKeywords: string[]
+    temperature: number
+    maxTokens: number
+    contextMaxDepth: number
+    systemPrompt: string
+    promptTemplates: PromptTemplates
+  }
+  apiKey?: string
+  allowRuntimeApiKeyFallback?: boolean
+}) {
+  const res = await fetch(`${API_BASE}/config/llm/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  return parseJsonOrThrow(res) as Promise<{
+    success: boolean
+    hasApiKey: boolean
+    runtimeSnapshot: RuntimeSnapshot
+    health: ProfileHealth
+    diagnostics?: string[]
+  }>
+}
+
+export async function getRuntimeConfigState(profileId?: string) {
+  const query = profileId ? `?profileId=${encodeURIComponent(profileId)}` : ''
+  const res = await fetch(`${API_BASE}/config/state${query}`, {
+    method: 'GET'
+  })
+  return parseJsonOrThrow(res) as Promise<{
+    runtimeSnapshot: RuntimeSnapshot
+    health: ProfileHealth
+    diagnostics?: string[]
+  }>
 }
 
 export async function listAvailableModels(config: {

@@ -8,7 +8,14 @@ export type {
   LLMProfileSecret,
   LLMSettings,
   LocalizedPromptConfig,
+  ProfileHealth,
   PromptTemplates,
+  ProviderId,
+  ReadinessState,
+  RuntimeKeySource,
+  RuntimeSnapshot,
+  RuntimeSyncState,
+  SecretAvailability,
   SecretProvider,
   SettingsStore,
   ThemeMode,
@@ -23,3 +30,10 @@ export {
   DEFAULT_PROMPT_TEMPLATES_BY_LOCALE,
   DEFAULT_SYSTEM_PROMPT_BY_LOCALE
 } from './defaults'
+
+export {
+  selectActiveProfileHealth,
+  selectProfileHealth,
+  selectProfileReadiness,
+  selectToolbarIndicatorState
+} from './selectors'

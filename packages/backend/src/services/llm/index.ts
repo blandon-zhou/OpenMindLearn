@@ -3,16 +3,41 @@ import { buildAnthropicPayload, normalizeAnthropicResponse } from './adapters/an
 import { buildGoogleGeminiPayload, normalizeGoogleResponse } from './adapters/googleGemini.js'
 import { buildOpenAIChatPayload, normalizeOpenAIResponse } from './adapters/openaiChat.js'
 import { buildOpenAIResponsesPayload } from './adapters/openaiResponses.js'
-import { getLLMConfig, getResolvedConfig, setLLMConfig } from './config.js'
+import { getLLMConfig, getResolvedConfig, resolveRuntimeApiKeySource, setLLMConfig } from './config.js'
 import { buildContextPromptFromTemplates, buildExpandPromptFromTemplates } from './prompts.js'
+import { getProviderDefinitionByApiStyle } from './providerRegistry.js'
+import { createProfileHealth, createRuntimeSnapshot } from './runtimeState.js'
 import { extractErrorMessage, parseResponseJson } from './transport.js'
-import type { AnthropicMessageResponse, ChatCompletionResponse, ExpandMode, GeneratedAnswer, GoogleGenerateResponse, ApiStyle, PromptTemplates, ResolvedConfig } from './types.js'
+import type {
+  AnthropicMessageResponse,
+  ApiStyle,
+  ChatCompletionResponse,
+  ExpandMode,
+  GeneratedAnswer,
+  GoogleGenerateResponse,
+  ProfileHealth,
+  PromptTemplates,
+  ResolvedConfig,
+  RuntimeKeySource,
+  RuntimeSnapshot,
+  RuntimeSyncState
+} from './types.js'
 import { listAvailableModels } from './models.js'
 
-export type { ExpandMode, ApiStyle, PromptTemplates, GeneratedAnswer }
+export type {
+  ApiStyle,
+  ExpandMode,
+  GeneratedAnswer,
+  ProfileHealth,
+  PromptTemplates,
+  RuntimeKeySource,
+  RuntimeSnapshot,
+  RuntimeSyncState
+}
 
 export { setLLMConfig, getLLMConfig }
 export { listAvailableModels }
+export { getProviderDefinitionByApiStyle, createRuntimeSnapshot, createProfileHealth, resolveRuntimeApiKeySource }
 
 export function buildExpandPrompt(text: string, mode: ExpandMode = 'direct'): string {
   const cfg = getResolvedConfig()

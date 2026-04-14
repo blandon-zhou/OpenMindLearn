@@ -1,4 +1,5 @@
 import { normalizeApiStyle } from './config.js'
+import { getProviderDefinitionByApiStyle } from './providerRegistry.js'
 import { extractErrorMessage, parseResponseJson } from './transport.js'
 import type { ApiStyle } from './types.js'
 
@@ -36,17 +37,6 @@ function joinBaseAndModelsPath(base: string, modelsPath: string): string {
   return `${base}/${modelsPath}`
 }
 
-function toGoogleBaseURL(baseURL: string): string {
-  const normalized = withNoTrailingSlash(baseURL)
-  if (normalized.endsWith('/v1')) {
-    return `${normalized.slice(0, -3)}/gemini/v1`
-  }
-  if (normalized.includes('/openai/v1')) {
-    return normalized.replace('/openai/v1', '/gemini/v1')
-  }
-  return normalized
-}
-
 function normalizeModelId(value: string): string {
   const trimmed = value.trim()
   if (!trimmed) return ''
@@ -80,19 +70,26 @@ function collectModelIds(data: any): string[] {
 }
 
 function buildModelListRequests(style: ApiStyle, baseURL: string, apiKey: string, modelsPath?: string) {
-  const normalizedBase = style === 'google_gemini'
-    ? toGoogleBaseURL(baseURL)
-    : withNoTrailingSlash(baseURL)
-  const candidateBases = withBaseVariants(normalizedBase)
-  const normalizedPath = normalizeModelsPath(modelsPath)
+  const provider = getProviderDefinitionByApiStyle(style)
+  const normalizedBase = provider.baseUrlRules.normalize(baseURL)
+  const candidateBases = provider.baseUrlRules.supportsV1AutoVariant
+    ? withBaseVariants(normalizedBase)
+    : [withNoTrailingSlash(normalizedBase)].filter(Boolean)
+  const normalizedPath = normalizeModelsPath(modelsPath || provider.defaultModelsPath)
 
   const headers: Record<string, string> = {}
   if (apiKey) {
-    headers.Authorization = `Bearer ${apiKey}`
-    headers['x-api-key'] = apiKey
-    headers['x-goog-api-key'] = apiKey
+    if (provider.authSchemes.includes('bearer')) {
+      headers.Authorization = `Bearer ${apiKey}`
+    }
+    if (provider.authSchemes.includes('x-api-key')) {
+      headers['x-api-key'] = apiKey
+    }
+    if (provider.authSchemes.includes('x-goog-api-key')) {
+      headers['x-goog-api-key'] = apiKey
+    }
   }
-  if (style === 'anthropic') {
+  if (provider.authSchemes.includes('anthropic-version')) {
     headers['anthropic-version'] = '2023-06-01'
   }
 
@@ -109,7 +106,6 @@ export async function listAvailableModels(config: ModelListConfig): Promise<stri
   const modelsPath = (config.modelsPath || '').trim()
 
   if (!baseURL) throw new Error('请先填写 Base URL')
-  if (!apiKey) throw new Error('请先填写 API Key')
 
   const requests = buildModelListRequests(style, baseURL, apiKey, modelsPath)
   let lastErrorMessage = '未获取到可用模型，请检查 API 风格与 Base URL 是否匹配'

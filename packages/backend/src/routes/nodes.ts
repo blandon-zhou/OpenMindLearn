@@ -1,5 +1,18 @@
 import { FastifyInstance } from 'fastify'
-import { buildExpandPrompt, generateContent, generateWithContext, getLLMConfig, listAvailableModels, setLLMConfig, type ApiStyle } from '../services/llm.js'
+import {
+  buildExpandPrompt,
+  createProfileHealth,
+  createRuntimeSnapshot,
+  generateContent,
+  generateWithContext,
+  getLLMConfig,
+  getProviderDefinitionByApiStyle,
+  listAvailableModels,
+  resolveRuntimeApiKeySource,
+  setLLMConfig,
+  type ApiStyle,
+  type RuntimeSyncState
+} from '../services/llm.js'
 import { buildContextChain, generateContextXml } from '../services/contextService.js'
 import { Node, SourceReference, NodeImage } from '../types/index.js'
 
@@ -73,11 +86,128 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     }
   })
 
-  fastify.post('/api/config/llm', async (request, reply) => {
-    const { apiKey, baseURL, model, apiStyle, answerAnchorKeywords, temperature, maxTokens, contextMaxDepth, systemPrompt, promptTemplates } = request.body as {
-      apiKey: string
-      baseURL: string
-      model: string
+  interface SyncRequestConfig {
+    baseURL?: string
+    model?: string
+    apiStyle?: ApiStyle
+    answerAnchorKeywords?: string[]
+    temperature?: number
+    maxTokens?: number
+    contextMaxDepth?: number
+    systemPrompt?: string
+    promptTemplates?: {
+      directExpand?: string
+      targetedQuestion?: string
+      contextEnvelope?: string
+    }
+  }
+
+  interface SyncRequestBody {
+    profileId?: string
+    config?: SyncRequestConfig
+    apiKey?: string
+    allowRuntimeApiKeyFallback?: boolean
+  }
+
+  function syncRuntimeConfig(payload: SyncRequestBody) {
+    const profileId = (payload.profileId || 'active-profile').trim() || 'active-profile'
+    const config = payload.config || {}
+    const allowRuntimeApiKeyFallback = Boolean(payload.allowRuntimeApiKeyFallback)
+    const requestApiKey = payload.apiKey?.trim() || ''
+
+    const nextConfig: {
+      apiKey?: string
+      baseURL?: string
+      model?: string
+      apiStyle?: ApiStyle
+      answerAnchorKeywords?: string[]
+      temperature?: number
+      maxTokens?: number
+      contextMaxDepth?: number
+      systemPrompt?: string
+      promptTemplates?: {
+        directExpand?: string
+        targetedQuestion?: string
+        contextEnvelope?: string
+      }
+    } = {}
+
+    if (payload.apiKey !== undefined) nextConfig.apiKey = requestApiKey
+    if (config.baseURL !== undefined) nextConfig.baseURL = config.baseURL
+    if (config.model !== undefined) nextConfig.model = config.model
+    if (config.apiStyle !== undefined) nextConfig.apiStyle = config.apiStyle
+    if (config.answerAnchorKeywords !== undefined) nextConfig.answerAnchorKeywords = config.answerAnchorKeywords
+    if (config.temperature !== undefined) nextConfig.temperature = config.temperature
+    if (config.maxTokens !== undefined) nextConfig.maxTokens = config.maxTokens
+    if (config.contextMaxDepth !== undefined) nextConfig.contextMaxDepth = config.contextMaxDepth
+    if (config.systemPrompt !== undefined) nextConfig.systemPrompt = config.systemPrompt
+    if (config.promptTemplates !== undefined) nextConfig.promptTemplates = config.promptTemplates
+
+    if (Object.keys(nextConfig).length > 0) {
+      setLLMConfig(nextConfig)
+    }
+
+    const keySourceHint = resolveRuntimeApiKeySource(requestApiKey)
+    const runtimeSnapshot = createRuntimeSnapshot(keySourceHint)
+    const diagnostics: string[] = []
+    let runtimeSyncState: RuntimeSyncState = 'synced'
+    let lastSyncError = ''
+
+    const keyMissing = !runtimeSnapshot.hasApiKey
+    const blockedRuntimeFallback = !allowRuntimeApiKeyFallback && keySourceHint === 'runtime' && !requestApiKey
+
+    if (!runtimeSnapshot.baseURL.trim()) {
+      diagnostics.push('missing_base_url')
+    }
+    if (!runtimeSnapshot.model.trim()) {
+      diagnostics.push('missing_model')
+    }
+    if (keyMissing || blockedRuntimeFallback) {
+      diagnostics.push('missing_key')
+      lastSyncError = 'API Key is missing'
+      runtimeSyncState = 'failed'
+    }
+
+    const health = createProfileHealth({
+      profileId,
+      snapshot: runtimeSnapshot,
+      runtimeSyncState,
+      lastSyncError: lastSyncError || undefined
+    })
+    const success = health.readiness === 'ready'
+
+    if (!success && health.readiness !== 'missing_key') {
+      runtimeSyncState = 'failed'
+    }
+
+    return {
+      success,
+      runtimeSnapshot,
+      health: createProfileHealth({
+        profileId,
+        snapshot: runtimeSnapshot,
+        runtimeSyncState,
+        lastSyncError: health.lastSyncError
+      }),
+      diagnostics
+    }
+  }
+
+  fastify.post('/api/config/llm/sync', async (request) => {
+    const body = request.body as SyncRequestBody
+    const result = syncRuntimeConfig(body)
+    return {
+      ...result,
+      hasApiKey: result.runtimeSnapshot.hasApiKey
+    }
+  })
+
+  // Legacy compatibility wrapper.
+  fastify.post('/api/config/llm', async (request) => {
+    const body = request.body as {
+      apiKey?: string
+      baseURL?: string
+      model?: string
       apiStyle?: ApiStyle
       answerAnchorKeywords?: string[]
       temperature?: number
@@ -90,14 +220,60 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         contextEnvelope?: string
       }
     }
-    setLLMConfig({ apiKey, baseURL, model, apiStyle, answerAnchorKeywords, temperature, maxTokens, contextMaxDepth, systemPrompt, promptTemplates })
-    return { success: true }
+
+    const result = syncRuntimeConfig({
+      profileId: 'legacy-profile',
+      config: {
+        baseURL: body.baseURL,
+        model: body.model,
+        apiStyle: body.apiStyle,
+        answerAnchorKeywords: body.answerAnchorKeywords,
+        temperature: body.temperature,
+        maxTokens: body.maxTokens,
+        contextMaxDepth: body.contextMaxDepth,
+        systemPrompt: body.systemPrompt,
+        promptTemplates: body.promptTemplates
+      },
+      apiKey: body.apiKey,
+      allowRuntimeApiKeyFallback: true
+    })
+
+    return {
+      success: result.success,
+      hasApiKey: result.runtimeSnapshot.hasApiKey
+    }
   })
 
-  fastify.get('/api/config/llm/status', async () => {
-    const cfg = getLLMConfig()
+  fastify.get('/api/config/state', async (request) => {
+    const profileId = String((request.query as { profileId?: string } | undefined)?.profileId || 'active-profile')
+    const runtimeSnapshot = createRuntimeSnapshot()
+    const health = createProfileHealth({
+      profileId,
+      snapshot: runtimeSnapshot,
+      runtimeSyncState: 'idle'
+    })
+
     return {
-      hasApiKey: Boolean(cfg.apiKey.trim())
+      runtimeSnapshot,
+      health,
+      diagnostics: []
+    }
+  })
+
+  // Legacy compatibility wrapper.
+  fastify.get('/api/config/llm/status', async (request) => {
+    const profileId = String((request.query as { profileId?: string } | undefined)?.profileId || 'active-profile')
+    const runtimeSnapshot = createRuntimeSnapshot()
+    const health = createProfileHealth({
+      profileId,
+      snapshot: runtimeSnapshot,
+      runtimeSyncState: 'idle'
+    })
+
+    return {
+      hasApiKey: runtimeSnapshot.hasApiKey,
+      runtimeSnapshot,
+      health
     }
   })
 
@@ -111,13 +287,20 @@ export async function nodeRoutes(fastify: FastifyInstance) {
 
     try {
       const runtime = getLLMConfig()
+      const resolvedStyle = apiStyle || runtime.apiStyle
+      const resolvedApiKey = (apiKey || '').trim() || runtime.apiKey
       const models = await listAvailableModels({
-        apiKey: apiKey || runtime.apiKey,
+        apiKey: resolvedApiKey,
         baseURL: baseURL || runtime.baseURL,
-        apiStyle: apiStyle || runtime.apiStyle,
+        apiStyle: resolvedStyle,
         modelsPath
       })
-      return { models }
+      const provider = getProviderDefinitionByApiStyle(resolvedStyle)
+      return {
+        models,
+        keySource: resolveRuntimeApiKeySource((apiKey || '').trim()),
+        providerId: provider.id
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '获取模型列表失败'
       return reply.code(400).send({ error: message })

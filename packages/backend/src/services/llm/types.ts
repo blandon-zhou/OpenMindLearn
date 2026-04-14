@@ -2,6 +2,11 @@ import type { NodeImage } from '../../types/index.js'
 
 export type ExpandMode = 'direct' | 'targeted'
 export type ApiStyle = 'openai_chat' | 'google_gemini' | 'anthropic' | 'openai_response'
+export type ProviderId = 'openai_compatible' | 'anthropic' | 'google_gemini' | 'custom'
+export type RuntimeKeySource = 'request' | 'runtime' | 'env' | 'none'
+export type SecretAvailability = 'unknown' | 'local' | 'runtime' | 'env' | 'missing' | 'error'
+export type RuntimeSyncState = 'idle' | 'syncing' | 'synced' | 'stale' | 'failed'
+export type ReadinessState = 'ready' | 'missing_base_url' | 'missing_model' | 'missing_key' | 'sync_failed'
 
 export interface PromptTemplates {
   directExpand: string
@@ -20,6 +25,26 @@ export interface RuntimeConfig {
   contextMaxDepth?: number
   systemPrompt?: string
   promptTemplates?: Partial<PromptTemplates>
+}
+
+export interface RuntimeSnapshot {
+  hasApiKey: boolean
+  keySource: RuntimeKeySource
+  providerId: ProviderId
+  baseURL: string
+  model: string
+  apiStyle: ApiStyle
+  updatedAt: string
+}
+
+export interface ProfileHealth {
+  profileId: string
+  providerId: ProviderId
+  secretAvailability: SecretAvailability
+  runtimeSyncState: RuntimeSyncState
+  readiness: ReadinessState
+  lastSyncError?: string
+  updatedAt: string
 }
 
 export interface ResolvedConfig {

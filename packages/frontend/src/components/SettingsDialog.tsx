@@ -3,6 +3,8 @@ import {
   DEFAULT_ANSWER_ANCHOR_KEYWORDS_BY_LOCALE,
   DEFAULT_PROMPT_TEMPLATES_BY_LOCALE,
   DEFAULT_SYSTEM_PROMPT_BY_LOCALE,
+  selectProfileHealth,
+  selectProfileReadiness,
   type ApiStyle,
   type ExpandMode,
   type PromptTemplates,
@@ -11,7 +13,6 @@ import {
 } from '../stores/settingsStore'
 import type { LocaleCode, LocaleMode } from '../i18n/types'
 import { fetchProfileModels, getLLMProfileById, syncProfileToRuntime } from '../services/profileRuntime'
-import { getRuntimeLLMConfigStatus } from '../services/api'
 import { getSecret, removeSecret, setSecret } from '../services/secureSecret'
 import { useToastStore } from '../stores/toastStore'
 import { Copy, Moon, Plus, Sun, Trash2, X } from 'lucide-react'
@@ -134,7 +135,17 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [switchingProfileId, setSwitchingProfileId] = useState('')
   const [resolvedSecretHasApiKey, setResolvedSecretHasApiKey] = useState<boolean | null>(null)
-  const [runtimeHasApiKey, setRuntimeHasApiKey] = useState<boolean | null>(null)
+  const profileReadinessById = useSettingsStore((state) => {
+    const entries = state.llmSettings.profiles.map((profile) => [
+      profile.id,
+      selectProfileReadiness(state, profile.id)
+    ] as const)
+    return Object.fromEntries(entries) as Record<string, string>
+  })
+  const selectedProfileHealth = useSettingsStore((state) => {
+    if (!selectedProfileId) return null
+    return selectProfileHealth(state, selectedProfileId)
+  })
 
   const selectedProfile = useMemo(() => {
     return llmSettings.profiles.find((profile) => profile.id === selectedProfileId) || llmSettings.profiles[0]
@@ -320,50 +331,16 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     }
   }, [open, selectedProfileId])
 
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-
-    void (async () => {
-      try {
-        const status = await getRuntimeLLMConfigStatus()
-        if (cancelled) return
-        setRuntimeHasApiKey(Boolean(status?.hasApiKey))
-      } catch {
-        if (cancelled) return
-        setRuntimeHasApiKey(null)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [open, llmSettings.activeProfileId])
-
   if (!open || !selectedProfile) return null
 
   const hasStoredApiKey = resolvedSecretHasApiKey ?? selectedProfile.secret.hasApiKey
-  const isSelectedProfileActive = selectedProfile.id === llmSettings.activeProfileId
-  const hasRuntimeApiKeyForSelected = isSelectedProfileActive && Boolean(runtimeHasApiKey)
-  const hasEffectiveApiKey = hasStoredApiKey || hasRuntimeApiKeyForSelected
-
-  const hasApiKeyForProfile = (profileId: string): boolean => {
-    const profile = llmSettings.profiles.find((item) => item.id === profileId)
-    if (!profile) return false
-    if (profile.id === selectedProfile.id) {
-      return resolvedSecretHasApiKey ?? profile.secret.hasApiKey
-    }
-    if (profile.id === llmSettings.activeProfileId && runtimeHasApiKey) {
-      return true
-    }
-    return profile.secret.hasApiKey
-  }
+  const hasRuntimeApiKeyForSelected = (
+    selectedProfileHealth?.secretAvailability === 'runtime'
+    || selectedProfileHealth?.secretAvailability === 'env'
+  )
 
   const isProfileReady = (profileId: string): boolean => {
-    const profile = llmSettings.profiles.find((item) => item.id === profileId)
-    if (!profile) return false
-    const hasApiKey = hasApiKeyForProfile(profileId)
-    return Boolean(profile.config.baseURL.trim() && profile.config.model.trim() && hasApiKey)
+    return profileReadinessById[profileId] === 'ready'
   }
 
   const parseNumber = (
@@ -402,11 +379,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
     if (!draftProfile.config.baseURL) {
       if (!silent) showToast(t('settings.toast.modelsNeedBaseUrl'), 'error')
-      return
-    }
-
-    if (!apiKeyInput.trim() && !hasEffectiveApiKey) {
-      if (!silent) showToast(t('settings.toast.modelsNeedConfig'), 'error')
       return
     }
 
@@ -472,7 +444,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
     setSwitchingProfileId(profileId)
     try {
-      await syncProfileToRuntime(llmSettings, profile)
+      await syncProfileToRuntime(llmSettings, profile, {
+        allowRuntimeApiKeyFallback: true
+      })
       setActiveLLMProfile(profile.id)
       showToast(t('settings.toast.profileActivated', { name: profile.name }), 'success')
     } catch (error) {
@@ -540,7 +514,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
       let runtimeSyncErrorMessage = ''
       if (shouldSyncRuntime && nextSelectedProfile) {
         try {
-          await syncProfileToRuntime(nextSettings, nextSelectedProfile)
+          await syncProfileToRuntime(nextSettings, nextSelectedProfile, {
+            allowRuntimeApiKeyFallback: true
+          })
         } catch (error) {
           runtimeSyncErrorMessage = error instanceof Error ? error.message : t('settings.toast.modelsLoadUnknown')
           if (runtimeSyncErrorMessage.includes('API Key is missing')) {

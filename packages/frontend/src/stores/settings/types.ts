@@ -4,6 +4,11 @@ export type ExpandMode = 'direct' | 'targeted'
 export type ThemeMode = 'light' | 'dark'
 export type ApiStyle = 'openai_chat' | 'google_gemini' | 'anthropic' | 'openai_response'
 export type SecretProvider = 'os_keychain' | 'webcrypto'
+export type ProviderId = 'openai_compatible' | 'anthropic' | 'google_gemini' | 'custom'
+export type RuntimeKeySource = 'request' | 'runtime' | 'env' | 'none'
+export type SecretAvailability = 'unknown' | 'local' | 'runtime' | 'env' | 'missing' | 'error'
+export type RuntimeSyncState = 'idle' | 'syncing' | 'synced' | 'stale' | 'failed'
+export type ReadinessState = 'ready' | 'missing_base_url' | 'missing_model' | 'missing_key' | 'sync_failed'
 
 export interface LLMProfileConfig {
   baseURL: string
@@ -59,6 +64,26 @@ export interface LLMSettings {
   promptTemplates: PromptTemplates
 }
 
+export interface RuntimeSnapshot {
+  hasApiKey: boolean
+  keySource: RuntimeKeySource
+  providerId: ProviderId
+  baseURL: string
+  model: string
+  apiStyle: ApiStyle
+  updatedAt: string
+}
+
+export interface ProfileHealth {
+  profileId: string
+  providerId: ProviderId
+  secretAvailability: SecretAvailability
+  runtimeSyncState: RuntimeSyncState
+  readiness: ReadinessState
+  lastSyncError?: string
+  updatedAt: string
+}
+
 export interface UISettings {
   theme: ThemeMode
   localeMode: LocaleMode
@@ -68,6 +93,8 @@ export interface UISettings {
 export interface SettingsStore {
   llmSettings: LLMSettings
   uiSettings: UISettings
+  runtimeSnapshot: RuntimeSnapshot | null
+  profileHealthById: Record<string, ProfileHealth>
   updateLLMSettings: (settings: Partial<LLMSettings>) => void
   createLLMProfile: (name?: string) => string
   renameLLMProfile: (profileId: string, name: string) => void
@@ -76,6 +103,9 @@ export interface SettingsStore {
   updateLLMProfileConfig: (profileId: string, config: Partial<LLMProfileConfig>) => void
   updateLLMProfileSecret: (profileId: string, secret: Partial<LLMProfileSecret>) => void
   setLLMProfileModelOptionsCache: (profileId: string, models: string[]) => void
+  setRuntimeSnapshot: (snapshot: RuntimeSnapshot | null) => void
+  setProfileHealth: (profileId: string, health: ProfileHealth) => void
+  removeProfileHealth: (profileId: string) => void
   updateUISettings: (settings: Partial<UISettings>) => void
   setTheme: (theme: ThemeMode) => void
   setLocaleMode: (mode: LocaleMode) => void

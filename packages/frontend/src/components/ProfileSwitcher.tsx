@@ -1,20 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronsUpDown } from 'lucide-react'
-import { useSettingsStore } from '../stores/settingsStore'
+import {
+  selectProfileReadiness,
+  useSettingsStore
+} from '../stores/settingsStore'
 import { getLLMProfileById, syncProfileToRuntime } from '../services/profileRuntime'
-import { getRuntimeLLMConfigStatus } from '../services/api'
 import { useToastStore } from '../stores/toastStore'
 import { useI18n } from '../hooks/useI18n'
 
 export function ProfileSwitcher() {
   const llmSettings = useSettingsStore((state) => state.llmSettings)
   const setActiveLLMProfile = useSettingsStore((state) => state.setActiveLLMProfile)
+  const readinessById = useSettingsStore((state) => {
+    const entries = state.llmSettings.profiles.map((profile) => [
+      profile.id,
+      selectProfileReadiness(state, profile.id)
+    ] as const)
+    return Object.fromEntries(entries) as Record<string, string>
+  })
   const { showToast } = useToastStore()
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [keyword, setKeyword] = useState('')
   const [switchingProfileId, setSwitchingProfileId] = useState('')
-  const [runtimeHasApiKey, setRuntimeHasApiKey] = useState<boolean | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
   const activeProfile = useMemo(
@@ -38,35 +46,13 @@ export function ProfileSwitcher() {
   }, [keyword, llmSettings.profiles])
 
   const isProfileReady = (profileId: string): boolean => {
-    const profile = getLLMProfileById(llmSettings, profileId)
-    if (!profile) return false
-    const hasRuntimeForActive = profile.id === llmSettings.activeProfileId && Boolean(runtimeHasApiKey)
-    const hasApiKey = profile.secret.hasApiKey || hasRuntimeForActive
-    return Boolean(profile.config.baseURL.trim() && profile.config.model.trim() && hasApiKey)
+    return readinessById[profileId] === 'ready'
   }
 
   const activeProfileReady = activeProfile ? isProfileReady(activeProfile.id) : false
   const activeProfileStatusLabel = activeProfileReady
     ? t('settings.profile.status.ready')
     : t('settings.profile.status.notReady')
-
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        const status = await getRuntimeLLMConfigStatus()
-        if (cancelled) return
-        setRuntimeHasApiKey(Boolean(status?.hasApiKey))
-      } catch {
-        if (cancelled) return
-        setRuntimeHasApiKey(null)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [llmSettings.activeProfileId])
 
   useEffect(() => {
     if (!open) return
@@ -93,7 +79,9 @@ export function ProfileSwitcher() {
 
     setSwitchingProfileId(profileId)
     try {
-      await syncProfileToRuntime(llmSettings, profile)
+      await syncProfileToRuntime(llmSettings, profile, {
+        allowRuntimeApiKeyFallback: true
+      })
       setActiveLLMProfile(profileId)
       showToast(t('toolbar.profile.switchSuccess', { name: profile.name }), 'success')
       setOpen(false)

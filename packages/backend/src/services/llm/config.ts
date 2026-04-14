@@ -1,7 +1,8 @@
 import { DEFAULT_ANSWER_ANCHOR_KEYWORDS, DEFAULT_PROMPT_TEMPLATES, DEFAULT_SYSTEM_PROMPT, resolveTemplate } from './prompts.js'
-import type { ApiStyle, PromptTemplates, ResolvedConfig, RuntimeConfig } from './types.js'
+import type { ApiStyle, PromptTemplates, ResolvedConfig, RuntimeConfig, RuntimeKeySource } from './types.js'
 
 let runtimeConfig: RuntimeConfig = {}
+let runtimeUpdatedAt = new Date().toISOString()
 const UNBOUNDED_MAX_TOKENS = Number.MAX_SAFE_INTEGER
 
 function parseNumber(input: unknown): number | undefined {
@@ -22,6 +23,10 @@ function toEnvNumber(value: string | undefined): number | undefined {
   if (!value) return undefined
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function getEnvApiKey(): string {
+  return (process.env.GEMINI_API_KEY || process.env.API_KEY || '').trim()
 }
 
 export function normalizeApiStyle(value: unknown): ApiStyle {
@@ -87,6 +92,7 @@ export function getResolvedConfig(): ResolvedConfig {
   const envContextMaxDepth = toEnvNumber(process.env.CONTEXT_MAX_DEPTH)
   const envApiStyle = process.env.API_STYLE
   const envAnswerAnchorKeywords = process.env.ANSWER_ANCHOR_KEYWORDS
+  const envApiKey = getEnvApiKey()
 
   const temperature = clamp(
     runtimeConfig.temperature ?? envTemperature ?? 0.7,
@@ -107,7 +113,7 @@ export function getResolvedConfig(): ResolvedConfig {
   )
 
   return {
-    apiKey: runtimeConfig.apiKey || '',
+    apiKey: runtimeConfig.apiKey || envApiKey || '',
     baseURL: runtimeConfig.baseURL || process.env.GEMINI_BASE_URL || '',
     model: runtimeConfig.model || process.env.GEMINI_MODEL || '',
     apiStyle: normalizeApiStyle(runtimeConfig.apiStyle || envApiStyle || 'openai_chat'),
@@ -154,8 +160,29 @@ export function setLLMConfig(config: RuntimeConfig) {
       ...(nextConfig.promptTemplates || {})
     }
   }
+  runtimeUpdatedAt = new Date().toISOString()
 }
 
 export function getLLMConfig() {
   return getResolvedConfig()
+}
+
+export function getRuntimeConfigRaw(): RuntimeConfig {
+  return {
+    ...runtimeConfig,
+    promptTemplates: {
+      ...(runtimeConfig.promptTemplates || {})
+    }
+  }
+}
+
+export function getRuntimeConfigUpdatedAt(): string {
+  return runtimeUpdatedAt
+}
+
+export function resolveRuntimeApiKeySource(requestApiKey?: string): RuntimeKeySource {
+  if ((requestApiKey || '').trim()) return 'request'
+  if ((runtimeConfig.apiKey || '').trim()) return 'runtime'
+  if (getEnvApiKey()) return 'env'
+  return 'none'
 }
