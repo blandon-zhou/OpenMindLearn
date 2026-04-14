@@ -1,5 +1,5 @@
 import { DEFAULT_ANSWER_ANCHOR_KEYWORDS, DEFAULT_PROMPT_TEMPLATES, DEFAULT_SYSTEM_PROMPT, resolveTemplate } from './prompts.js'
-import type { ApiStyle, PromptTemplates, ResolvedConfig, RuntimeConfig, RuntimeKeySource } from './types.js'
+import type { ApiStyle, PromptTemplates, RequestPathByStyle, ResolvedConfig, RuntimeConfig, RuntimeKeySource } from './types.js'
 
 let runtimeConfig: RuntimeConfig = {}
 let runtimeUpdatedAt = new Date().toISOString()
@@ -86,6 +86,25 @@ function getResolvedPromptTemplates(config: RuntimeConfig): PromptTemplates {
   }
 }
 
+function normalizeRequestPathByStyle(input: unknown): RequestPathByStyle {
+  if (!input || typeof input !== 'object') return {}
+  const source = input as Record<string, unknown>
+
+  const normalizePath = (value: unknown): string => {
+    if (typeof value !== 'string') return ''
+    const trimmed = value.trim().replace(/\/+$/, '')
+    if (!trimmed) return ''
+    return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  }
+
+  return {
+    openai_chat: normalizePath(source.openai_chat),
+    openai_response: normalizePath(source.openai_response),
+    anthropic: normalizePath(source.anthropic),
+    google_gemini: normalizePath(source.google_gemini)
+  }
+}
+
 export function getResolvedConfig(): ResolvedConfig {
   const envTemperature = toEnvNumber(process.env.GEMINI_TEMPERATURE)
   const envMaxTokens = toEnvNumber(process.env.GEMINI_MAX_TOKENS)
@@ -94,16 +113,17 @@ export function getResolvedConfig(): ResolvedConfig {
   const envAnswerAnchorKeywords = process.env.ANSWER_ANCHOR_KEYWORDS
   const envApiKey = getEnvApiKey()
 
-  const temperature = clamp(
-    runtimeConfig.temperature ?? envTemperature ?? 0.7,
-    0,
-    2
+  const resolvedTemperatureInput = runtimeConfig.temperature ?? envTemperature
+  const temperature = (
+    typeof resolvedTemperatureInput === 'number' && Number.isFinite(resolvedTemperatureInput)
+      ? clamp(resolvedTemperatureInput, 0, 2)
+      : undefined
   )
-  const maxTokens = clamp(
-    runtimeConfig.maxTokens ?? envMaxTokens ?? 4096,
-    1,
-    UNBOUNDED_MAX_TOKENS,
-    true
+  const resolvedMaxTokensInput = runtimeConfig.maxTokens ?? envMaxTokens
+  const maxTokens = (
+    typeof resolvedMaxTokensInput === 'number' && Number.isFinite(resolvedMaxTokensInput)
+      ? clamp(resolvedMaxTokensInput, 1, UNBOUNDED_MAX_TOKENS, true)
+      : undefined
   )
   const contextMaxDepth = clamp(
     runtimeConfig.contextMaxDepth ?? envContextMaxDepth ?? 10,
@@ -124,7 +144,8 @@ export function getResolvedConfig(): ResolvedConfig {
     maxTokens,
     contextMaxDepth,
     systemPrompt: (runtimeConfig.systemPrompt || DEFAULT_SYSTEM_PROMPT).trim() || DEFAULT_SYSTEM_PROMPT,
-    promptTemplates: getResolvedPromptTemplates(runtimeConfig)
+    promptTemplates: getResolvedPromptTemplates(runtimeConfig),
+    requestPathByStyle: normalizeRequestPathByStyle(runtimeConfig.requestPathByStyle)
   }
 }
 
@@ -137,14 +158,22 @@ export function setLLMConfig(config: RuntimeConfig) {
     nextConfig.answerAnchorKeywords = normalizeAnswerAnchorKeywords(config.answerAnchorKeywords)
   }
 
-  const parsedTemperature = parseNumber(config.temperature)
-  if (parsedTemperature !== undefined) {
-    nextConfig.temperature = clamp(parsedTemperature, 0, 2)
+  if (config.temperature === null) {
+    nextConfig.temperature = undefined
+  } else {
+    const parsedTemperature = parseNumber(config.temperature)
+    if (parsedTemperature !== undefined) {
+      nextConfig.temperature = clamp(parsedTemperature, 0, 2)
+    }
   }
 
-  const parsedMaxTokens = parseNumber(config.maxTokens)
-  if (parsedMaxTokens !== undefined) {
-    nextConfig.maxTokens = clamp(parsedMaxTokens, 1, UNBOUNDED_MAX_TOKENS, true)
+  if (config.maxTokens === null) {
+    nextConfig.maxTokens = undefined
+  } else {
+    const parsedMaxTokens = parseNumber(config.maxTokens)
+    if (parsedMaxTokens !== undefined) {
+      nextConfig.maxTokens = clamp(parsedMaxTokens, 1, UNBOUNDED_MAX_TOKENS, true)
+    }
   }
 
   const parsedContextDepth = parseNumber(config.contextMaxDepth)
@@ -158,6 +187,10 @@ export function setLLMConfig(config: RuntimeConfig) {
     promptTemplates: {
       ...(runtimeConfig.promptTemplates || {}),
       ...(nextConfig.promptTemplates || {})
+    },
+    requestPathByStyle: {
+      ...normalizeRequestPathByStyle(runtimeConfig.requestPathByStyle),
+      ...normalizeRequestPathByStyle(nextConfig.requestPathByStyle)
     }
   }
   runtimeUpdatedAt = new Date().toISOString()

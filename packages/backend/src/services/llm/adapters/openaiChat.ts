@@ -1,6 +1,6 @@
 import type { NodeImage } from '../../../types/index.js'
 import { extractAnswerAndThinking } from '../parsing/thinkingExtractor.js'
-import { asText } from '../parsing/normalize.js'
+import { asObject, asText } from '../parsing/normalize.js'
 import type { ChatCompletionChoice, ChatCompletionResponse, GeneratedAnswer, ResolvedConfig } from '../types.js'
 
 function withNoTrailingSlash(value: string): string {
@@ -22,27 +22,34 @@ export function buildOpenAIChatPayload(
       ]
     : prompt
 
+  const body: Record<string, unknown> = {
+    model: cfg.model,
+    messages: [
+      {
+        role: 'system',
+        content: cfg.systemPrompt
+      },
+      { role: 'user', content: userContent }
+    ]
+  }
+
+  if (typeof cfg.temperature === 'number') {
+    body.temperature = cfg.temperature
+  }
+  if (typeof cfg.maxTokens === 'number') {
+    body.max_tokens = cfg.maxTokens
+    // Some OpenAI-compatible gateways/models only honor one of these fields.
+    body.max_completion_tokens = cfg.maxTokens
+    body.max_output_tokens = cfg.maxTokens
+  }
+
   return {
     url: `${withNoTrailingSlash(cfg.baseURL)}/chat/completions`,
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${cfg.apiKey}`
     },
-    body: {
-      model: cfg.model,
-      temperature: cfg.temperature,
-      max_tokens: cfg.maxTokens,
-      // Some OpenAI-compatible gateways/models only honor one of these fields.
-      max_completion_tokens: cfg.maxTokens,
-      max_output_tokens: cfg.maxTokens,
-      messages: [
-        {
-          role: 'system',
-          content: cfg.systemPrompt
-        },
-        { role: 'user', content: userContent }
-      ]
-    }
+    body
   }
 }
 
@@ -155,7 +162,47 @@ function normalizeOutputPayload(output: Array<Record<string, unknown>> | undefin
   }
 }
 
+function normalizeGoogleCompatiblePayload(
+  data: Record<string, unknown>,
+  answerAnchorKeywords: string[]
+): GeneratedAnswer {
+  const candidates = Array.isArray(data.candidates) ? data.candidates : []
+  const firstCandidate = asObject(candidates[0])
+  const content = asObject(firstCandidate.content)
+  const parts = Array.isArray(content.parts) ? content.parts : []
+
+  const answerParts: string[] = []
+  const thinkingParts: string[] = []
+
+  parts.forEach((item) => {
+    const part = asObject(item)
+    const text = asText(part.text).trim()
+    if (!text) return
+    if (Boolean(part.thought) || asText(part.thoughtSignature).trim()) {
+      thinkingParts.push(text)
+      return
+    }
+    answerParts.push(text)
+  })
+
+  const parsed = extractAnswerAndThinking(answerParts.join('\n').trim(), answerAnchorKeywords)
+  const allThinking = [...thinkingParts]
+  if (parsed.thinking) allThinking.push(parsed.thinking)
+
+  return {
+    content: parsed.content,
+    thinking: allThinking.join('\n\n').trim() || undefined
+  }
+}
+
 export function normalizeOpenAIResponse(data: ChatCompletionResponse, answerAnchorKeywords: string[]): GeneratedAnswer {
+  if (Array.isArray((data as unknown as Record<string, unknown>).candidates)) {
+    return normalizeGoogleCompatiblePayload(
+      data as unknown as Record<string, unknown>,
+      answerAnchorKeywords
+    )
+  }
+
   const outputText = asText(data.output_text).trim()
   if (outputText) {
     return extractAnswerAndThinking(outputText, answerAnchorKeywords)

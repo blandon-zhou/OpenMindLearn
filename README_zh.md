@@ -67,7 +67,7 @@ pnpm dev
 
 ```bash
 HOST=127.0.0.1
-PORT=3000
+PORT=15174
 ```
 
 可选兼容默认值（仅在运行时 Profile 对应字段未设置时使用）：
@@ -81,7 +81,7 @@ API_STYLE=openai_chat
 访问：
 
 - 前端：<http://localhost:5173>
-- 后端：<http://127.0.0.1:3000>
+- 后端：<http://127.0.0.1:15174>
 
 ## 构建
 

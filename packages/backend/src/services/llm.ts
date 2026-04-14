@@ -17,5 +17,6 @@ export type {
   GeneratedAnswer,
   ProfileHealth,
   PromptTemplates,
+  RequestPathByStyle,
   RuntimeSyncState
 } from './llm/index.js'

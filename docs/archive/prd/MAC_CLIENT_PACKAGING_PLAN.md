@@ -32,18 +32,18 @@
 
 ```text
 Electron Main Process
-  ├─ 启动本地 Node Backend（子进程，监听 127.0.0.1:3000）
+  ├─ 启动本地 Node Backend（子进程，监听 127.0.0.1:15174）
   ├─ 加载 Frontend 静态资源（Vite build 输出）
   └─ Preload 暴露安全 IPC（打开/保存文件、系统对话框）
 
 Renderer (React)
-  └─ 继续通过 http://127.0.0.1:3000 调用现有 API
+  └─ 继续通过 http://127.0.0.1:15174 调用现有 API
 ```
 
 关键点：
 - Backend 仅监听 `127.0.0.1`，禁止 `0.0.0.0`。
 - App 退出时由 Main Process 回收 Backend 子进程。
-- 若 `3000` 被占用，启动时动态探测可用端口并注入给前端。
+- 若 `15174` 被占用，启动时动态探测可用端口并注入给前端。
 
 ---
 
@@ -65,7 +65,7 @@ packages/desktop/
 - `pnpm build:desktop`：构建 frontend/backend 后打包桌面应用。
 
 后端建议：
-- 支持端口由环境变量注入（例如 `PORT`），避免硬编码 `3000`。
+- 支持端口由环境变量注入（例如 `PORT`），避免硬编码 `15174`。
 
 ---
 

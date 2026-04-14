@@ -9,14 +9,16 @@ export type RuntimeKeySource = 'request' | 'runtime' | 'env' | 'none'
 export type SecretAvailability = 'unknown' | 'local' | 'runtime' | 'env' | 'missing' | 'error'
 export type RuntimeSyncState = 'idle' | 'syncing' | 'synced' | 'stale' | 'failed'
 export type ReadinessState = 'ready' | 'missing_base_url' | 'missing_model' | 'missing_key' | 'sync_failed'
+export type RequestPathByStyle = Partial<Record<ApiStyle, string>>
 
 export interface LLMProfileConfig {
   baseURL: string
   modelsPath: string
+  requestPathByStyle: RequestPathByStyle
   model: string
   apiStyle: ApiStyle
-  temperature: number
-  maxTokens: number
+  temperature: number | null
+  maxTokens: number | null
 }
 
 export interface LLMProfileSecret {
@@ -54,8 +56,8 @@ export interface LLMSettings {
   modelsPath: string
   model: string
   apiStyle: ApiStyle
-  temperature: number
-  maxTokens: number
+  temperature: number | null
+  maxTokens: number | null
   contextMaxDepth: number
   promptLocale: LocaleCode
   localizedPrompts: Record<LocaleCode, LocalizedPromptConfig>

@@ -67,7 +67,7 @@ The runtime uses this in-app profile configuration as the primary source.
 
 ```bash
 HOST=127.0.0.1
-PORT=3000
+PORT=15174
 ```
 
 Optional compatibility defaults (used only when runtime profile fields are not set):
@@ -81,7 +81,7 @@ API_STYLE=openai_chat
 Open:
 
 - Frontend: <http://localhost:5173>
-- Backend: <http://127.0.0.1:3000>
+- Backend: <http://127.0.0.1:15174>
 
 ## Build
 

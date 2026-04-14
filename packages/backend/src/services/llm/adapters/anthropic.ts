@@ -29,11 +29,28 @@ function clampAnthropicTemperature(value: number): number {
   return Math.max(0, Math.min(1, value))
 }
 
+const DEFAULT_ANTHROPIC_MAX_TOKENS = 4096
+
 export function buildAnthropicPayload(
   cfg: ResolvedConfig,
   prompt: string,
   images?: NodeImage[]
 ) {
+  const body: Record<string, unknown> = {
+    model: cfg.model,
+    max_tokens: typeof cfg.maxTokens === 'number' ? cfg.maxTokens : DEFAULT_ANTHROPIC_MAX_TOKENS,
+    system: cfg.systemPrompt,
+    messages: [
+      {
+        role: 'user',
+        content: toAnthropicContent(prompt, images)
+      }
+    ]
+  }
+  if (typeof cfg.temperature === 'number') {
+    body.temperature = clampAnthropicTemperature(cfg.temperature)
+  }
+
   return {
     url: `${withNoTrailingSlash(cfg.baseURL)}/messages`,
     headers: {
@@ -41,18 +58,7 @@ export function buildAnthropicPayload(
       'x-api-key': cfg.apiKey,
       'anthropic-version': '2023-06-01'
     },
-    body: {
-      model: cfg.model,
-      temperature: clampAnthropicTemperature(cfg.temperature),
-      max_tokens: cfg.maxTokens,
-      system: cfg.systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: toAnthropicContent(prompt, images)
-        }
-      ]
-    }
+    body
   }
 }
 

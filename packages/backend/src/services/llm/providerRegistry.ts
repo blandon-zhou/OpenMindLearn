@@ -27,11 +27,20 @@ function normalizeAnthropicBaseUrl(input: string): string {
 function normalizeGoogleGeminiBaseUrl(input: string): string {
   const normalized = withNoTrailingSlash(input)
   if (!normalized) return normalized
+  if (/\/gemini\/v1beta$/i.test(normalized)) {
+    return normalized.replace(/\/gemini\/v1beta$/i, '/gemini/v1')
+  }
+  if (/\/gemini\/v1$/i.test(normalized)) {
+    return normalized
+  }
+  if (/\/openai\/v1$/i.test(normalized)) {
+    return normalized.replace(/\/openai\/v1$/i, '/gemini/v1')
+  }
+  if (normalized.endsWith('/v1beta')) {
+    return `${normalized.slice(0, -7)}/gemini/v1`
+  }
   if (normalized.endsWith('/v1')) {
     return `${normalized.slice(0, -3)}/gemini/v1`
-  }
-  if (normalized.includes('/openai/v1')) {
-    return normalized.replace('/openai/v1', '/gemini/v1')
   }
   return normalized
 }
@@ -101,4 +110,3 @@ export function getProviderDefinitionById(providerId: ProviderId): ProviderDefin
 export function getProviderDefinitionByApiStyle(apiStyle: ApiStyle): ProviderDefinition {
   return getProviderDefinitionById(resolveProviderIdFromApiStyle(apiStyle))
 }
-

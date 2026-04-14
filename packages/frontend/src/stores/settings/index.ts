@@ -11,6 +11,7 @@ export type {
   ProfileHealth,
   PromptTemplates,
   ProviderId,
+  RequestPathByStyle,
   ReadinessState,
   RuntimeKeySource,
   RuntimeSnapshot,

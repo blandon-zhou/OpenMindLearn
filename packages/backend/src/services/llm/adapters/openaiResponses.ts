@@ -29,18 +29,25 @@ export function buildOpenAIResponsesPayload(
   prompt: string,
   images?: NodeImage[]
 ) {
+  const body: Record<string, unknown> = {
+    model: cfg.model,
+    instructions: cfg.systemPrompt,
+    input: buildInput(prompt, images)
+  }
+
+  if (typeof cfg.temperature === 'number') {
+    body.temperature = cfg.temperature
+  }
+  if (typeof cfg.maxTokens === 'number') {
+    body.max_output_tokens = cfg.maxTokens
+  }
+
   return {
     url: `${withNoTrailingSlash(cfg.baseURL)}/responses`,
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${cfg.apiKey}`
     },
-    body: {
-      model: cfg.model,
-      temperature: cfg.temperature,
-      max_output_tokens: cfg.maxTokens,
-      instructions: cfg.systemPrompt,
-      input: buildInput(prompt, images)
-    }
+    body
   }
 }

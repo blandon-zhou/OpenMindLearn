@@ -58,6 +58,7 @@ export async function syncProfileToRuntime(
       baseURL: profile.config.baseURL,
       model: profile.config.model,
       apiStyle: profile.config.apiStyle,
+      requestPathByStyle: profile.config.requestPathByStyle,
       answerAnchorKeywords: llmSettings.answerAnchorKeywords,
       temperature: profile.config.temperature,
       maxTokens: profile.config.maxTokens,
@@ -103,4 +104,3 @@ export async function fetchProfileModels(profile: LLMProfile, overrideApiKey?: s
     modelsPath: profile.config.modelsPath
   })
 }
-

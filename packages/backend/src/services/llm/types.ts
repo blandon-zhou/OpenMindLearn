@@ -7,6 +7,7 @@ export type RuntimeKeySource = 'request' | 'runtime' | 'env' | 'none'
 export type SecretAvailability = 'unknown' | 'local' | 'runtime' | 'env' | 'missing' | 'error'
 export type RuntimeSyncState = 'idle' | 'syncing' | 'synced' | 'stale' | 'failed'
 export type ReadinessState = 'ready' | 'missing_base_url' | 'missing_model' | 'missing_key' | 'sync_failed'
+export type RequestPathByStyle = Partial<Record<ApiStyle, string>>
 
 export interface PromptTemplates {
   directExpand: string
@@ -20,11 +21,12 @@ export interface RuntimeConfig {
   model?: string
   apiStyle?: ApiStyle
   answerAnchorKeywords?: string[]
-  temperature?: number
-  maxTokens?: number
+  temperature?: number | null
+  maxTokens?: number | null
   contextMaxDepth?: number
   systemPrompt?: string
   promptTemplates?: Partial<PromptTemplates>
+  requestPathByStyle?: RequestPathByStyle
 }
 
 export interface RuntimeSnapshot {
@@ -53,11 +55,12 @@ export interface ResolvedConfig {
   model: string
   apiStyle: ApiStyle
   answerAnchorKeywords: string[]
-  temperature: number
-  maxTokens: number
+  temperature?: number
+  maxTokens?: number
   contextMaxDepth: number
   systemPrompt: string
   promptTemplates: PromptTemplates
+  requestPathByStyle: RequestPathByStyle
 }
 
 export interface ChatCompletionMessage {

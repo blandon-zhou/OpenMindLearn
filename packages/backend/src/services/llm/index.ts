@@ -4,6 +4,7 @@ import { buildGoogleGeminiPayload, normalizeGoogleResponse } from './adapters/go
 import { buildOpenAIChatPayload, normalizeOpenAIResponse } from './adapters/openaiChat.js'
 import { buildOpenAIResponsesPayload } from './adapters/openaiResponses.js'
 import { getLLMConfig, getResolvedConfig, resolveRuntimeApiKeySource, setLLMConfig } from './config.js'
+import { resolveRequestBaseCandidates, shouldRetryWithNextBase } from './endpointRouting.js'
 import { buildContextPromptFromTemplates, buildExpandPromptFromTemplates } from './prompts.js'
 import { getProviderDefinitionByApiStyle } from './providerRegistry.js'
 import { createProfileHealth, createRuntimeSnapshot } from './runtimeState.js'
@@ -17,6 +18,7 @@ import type {
   GoogleGenerateResponse,
   ProfileHealth,
   PromptTemplates,
+  RequestPathByStyle,
   ResolvedConfig,
   RuntimeKeySource,
   RuntimeSnapshot,
@@ -30,6 +32,7 @@ export type {
   GeneratedAnswer,
   ProfileHealth,
   PromptTemplates,
+  RequestPathByStyle,
   RuntimeKeySource,
   RuntimeSnapshot,
   RuntimeSyncState
@@ -63,61 +66,121 @@ function assertConfigured(cfg: ResolvedConfig): void {
 
 function assertAbsoluteUrl(url: string): void {
   try {
-    // Node fetch requires absolute URL.
     new URL(url)
   } catch {
     throw new Error('Base URL 配置无效，请填写完整地址（例如 https://api.openai.com/v1）')
   }
 }
 
+interface FetchPayload {
+  url: string
+  headers: Record<string, string>
+  body: Record<string, unknown>
+}
+
+interface RetryResult {
+  success: boolean
+  data?: unknown
+  error?: string
+}
+
+async function fetchWithRetry(
+  payload: FetchPayload,
+  attemptStyle: ApiStyle,
+  errorPrefix: string
+): Promise<RetryResult> {
+  assertAbsoluteUrl(payload.url)
+  let retriedServerError = false
+
+  while (true) {
+    const response = await fetch(payload.url, {
+      method: 'POST',
+      headers: payload.headers,
+      body: JSON.stringify(payload.body)
+    })
+    const data = await parseResponseJson(response)
+
+    if (!response.ok) {
+      const message = extractErrorMessage(data, `${errorPrefix}：HTTP ${response.status}`)
+      const messageWithEndpoint = `${message} (style: ${attemptStyle}, endpoint: ${payload.url})`
+
+      if (!retriedServerError && response.status >= 500) {
+        retriedServerError = true
+        continue
+      }
+
+      const shouldRetry = response.status >= 500 || shouldRetryWithNextBase(response.status, message)
+      return {
+        success: false,
+        error: messageWithEndpoint,
+        data: shouldRetry ? undefined : new Error(messageWithEndpoint)
+      }
+    }
+
+    return { success: true, data }
+  }
+}
+
 async function generateByStyle(prompt: string, images?: NodeImage[]): Promise<GeneratedAnswer> {
   const cfg = getResolvedConfig()
   assertConfigured(cfg)
-
+  let lastErrorMessage = ''
+  const candidateFailures: string[] = []
+  const styleCandidates: ApiStyle[] = [cfg.apiStyle]
   if (cfg.apiStyle === 'google_gemini') {
-    const payload = buildGoogleGeminiPayload(cfg, prompt, images)
-    assertAbsoluteUrl(payload.url)
-    const response = await fetch(payload.url, {
-      method: 'POST',
-      headers: payload.headers,
-      body: JSON.stringify(payload.body)
-    })
-    const data = await parseResponseJson(response)
-    if (!response.ok) {
-      throw new Error(extractErrorMessage(data, `Google API 请求失败：HTTP ${response.status}`))
-    }
-    return normalizeGoogleResponse(data as GoogleGenerateResponse, cfg.answerAnchorKeywords)
+    styleCandidates.push('openai_chat')
   }
 
-  if (cfg.apiStyle === 'anthropic') {
-    const payload = buildAnthropicPayload(cfg, prompt, images)
-    assertAbsoluteUrl(payload.url)
-    const response = await fetch(payload.url, {
-      method: 'POST',
-      headers: payload.headers,
-      body: JSON.stringify(payload.body)
-    })
-    const data = await parseResponseJson(response)
-    if (!response.ok) {
-      throw new Error(extractErrorMessage(data, `Anthropic API 请求失败：HTTP ${response.status}`))
+  for (const attemptStyle of styleCandidates) {
+    const baseCandidates = resolveRequestBaseCandidates(cfg, attemptStyle)
+    for (const candidateBase of baseCandidates) {
+      const scoped = { ...cfg, apiStyle: attemptStyle, baseURL: candidateBase }
+
+      let payload: FetchPayload
+      let normalizer: (data: any, keywords: string[]) => GeneratedAnswer
+      let errorPrefix: string
+
+      if (scoped.apiStyle === 'google_gemini') {
+        payload = buildGoogleGeminiPayload(scoped, prompt, images)
+        normalizer = normalizeGoogleResponse
+        errorPrefix = 'Google API 请求失败'
+      } else if (scoped.apiStyle === 'anthropic') {
+        payload = buildAnthropicPayload(scoped, prompt, images)
+        normalizer = normalizeAnthropicResponse
+        errorPrefix = 'Anthropic API 请求失败'
+      } else {
+        payload = scoped.apiStyle === 'openai_response'
+          ? buildOpenAIResponsesPayload(scoped, prompt, images)
+          : buildOpenAIChatPayload(scoped, prompt, images)
+        normalizer = normalizeOpenAIResponse
+        errorPrefix = 'LLM 请求失败'
+      }
+
+      const result = await fetchWithRetry(payload, attemptStyle, errorPrefix)
+
+      if (result.success) {
+        return normalizer(result.data, scoped.answerAnchorKeywords)
+      }
+
+      lastErrorMessage = result.error!
+      candidateFailures.push(result.error!)
+      if (result.data instanceof Error) {
+        throw result.data
+      }
     }
-    return normalizeAnthropicResponse(data as AnthropicMessageResponse, cfg.answerAnchorKeywords)
   }
 
-  const payload = cfg.apiStyle === 'openai_response'
-    ? buildOpenAIResponsesPayload(cfg, prompt, images)
-    : buildOpenAIChatPayload(cfg, prompt, images)
-  assertAbsoluteUrl(payload.url)
-  const response = await fetch(payload.url, {
-    method: 'POST',
-    headers: payload.headers,
-    body: JSON.stringify(payload.body)
-  })
-  const data = await parseResponseJson(response)
-  if (!response.ok) {
-    throw new Error(extractErrorMessage(data, `LLM 请求失败：HTTP ${response.status}`))
+  if (candidateFailures.length > 0) {
+    const allEndpointNotFound = candidateFailures.every((item) => /endpoint not found/i.test(item))
+    if (cfg.apiStyle === 'google_gemini' && allEndpointNotFound) {
+      throw new Error(
+        `LLM 请求失败：已尝试 ${candidateFailures.length} 个端点；最后错误：${lastErrorMessage}；` +
+        '提示：已自动回退尝试 OpenAI Chat 协议但仍失败；该网关的 Gemini 路由通常按模型白名单发布，请确认当前模型已发布可用于对应协议'
+      )
+    }
+    throw new Error(`LLM 请求失败：已尝试 ${candidateFailures.length} 个端点；最后错误：${lastErrorMessage}`)
   }
-  return normalizeOpenAIResponse(data as ChatCompletionResponse, cfg.answerAnchorKeywords)
+  throw new Error(lastErrorMessage || 'LLM 请求失败：无法匹配可用端点')
 }
 
 export async function generateContent(prompt: string, images?: NodeImage[]): Promise<GeneratedAnswer> {

@@ -13,6 +13,7 @@ import type {
   LLMProfileSecret,
   LLMSettings,
   LocalizedPromptConfig,
+  RequestPathByStyle,
   UISettings
 } from './types'
 
@@ -27,8 +28,6 @@ interface LegacyLLMSettingsLike {
   promptTemplates?: Partial<LocalizedPromptConfig['promptTemplates']>
 }
 
-const DEFAULT_TEMPERATURE = 0.7
-const DEFAULT_MAX_TOKENS = 4096
 const UNBOUNDED_MAX_TOKENS = Number.MAX_SAFE_INTEGER
 const DEFAULT_CONTEXT_MAX_DEPTH = 10
 
@@ -45,6 +44,17 @@ function normalizeNumber(
   integer = false
 ): number {
   if (typeof input !== 'number' || !Number.isFinite(input)) return fallback
+  return clamp(input, min, max, integer)
+}
+
+function normalizeOptionalNumber(
+  input: unknown,
+  min: number,
+  max: number,
+  integer = false
+): number | null {
+  if (input === null || input === undefined || input === '') return null
+  if (typeof input !== 'number' || !Number.isFinite(input)) return null
   return clamp(input, min, max, integer)
 }
 
@@ -121,14 +131,32 @@ export function normalizeLocalizedPrompt(locale: LocaleCode, source?: Partial<Lo
   }
 }
 
+function normalizeRequestPathByStyle(source?: Partial<Record<ApiStyle, unknown>>): RequestPathByStyle {
+  const normalizePath = (value: unknown): string => {
+    if (typeof value !== 'string') return ''
+    const trimmed = value.trim().replace(/\/+$/, '')
+    if (!trimmed) return ''
+    return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  }
+
+  const raw = source || {}
+  return {
+    openai_chat: normalizePath(raw.openai_chat),
+    openai_response: normalizePath(raw.openai_response),
+    anthropic: normalizePath(raw.anthropic),
+    google_gemini: normalizePath(raw.google_gemini)
+  }
+}
+
 export function normalizeLLMProfileConfig(source?: Partial<LLMProfileConfig>): LLMProfileConfig {
   return {
     baseURL: (source?.baseURL || '').trim(),
     modelsPath: (source?.modelsPath || '').trim(),
+    requestPathByStyle: normalizeRequestPathByStyle(source?.requestPathByStyle as Partial<Record<ApiStyle, unknown>>),
     model: (source?.model || '').trim(),
     apiStyle: normalizeApiStyle(source?.apiStyle),
-    temperature: normalizeNumber(source?.temperature, DEFAULT_TEMPERATURE, 0, 2),
-    maxTokens: normalizeNumber(source?.maxTokens, DEFAULT_MAX_TOKENS, 1, UNBOUNDED_MAX_TOKENS, true)
+    temperature: normalizeOptionalNumber(source?.temperature, 0, 2),
+    maxTokens: normalizeOptionalNumber(source?.maxTokens, 1, UNBOUNDED_MAX_TOKENS, true)
   }
 }
 
@@ -238,8 +266,8 @@ export function normalizeLLMSettings(settings?: Partial<LLMSettings> | Record<st
     modelsPath: '',
     model: '',
     apiStyle: 'openai_chat',
-    temperature: DEFAULT_TEMPERATURE,
-    maxTokens: DEFAULT_MAX_TOKENS,
+    temperature: null,
+    maxTokens: null,
     contextMaxDepth: normalizeNumber(upgraded.contextMaxDepth, DEFAULT_CONTEXT_MAX_DEPTH, 1, 50, true),
     promptLocale,
     localizedPrompts,

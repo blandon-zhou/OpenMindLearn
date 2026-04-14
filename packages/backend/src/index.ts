@@ -11,7 +11,7 @@ if (process.env.OML_DISABLE_DOTENV !== '1') {
 // .oml 使用 base64 传输，体积会比原始 ZIP 增大，带图片时需要更高上限
 const fastify = Fastify({ logger: true, bodyLimit: 60 * 1024 * 1024 })
 const host = process.env.HOST || '127.0.0.1'
-const port = Number(process.env.PORT || 3000)
+const port = Number(process.env.PORT || 15174)
 
 await fastify.register(cors)
 await fastify.register(nodeRoutes)

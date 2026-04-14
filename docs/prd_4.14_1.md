@@ -14,7 +14,7 @@
 1. 建立统一 Provider 管理模型，减少分散分支逻辑。
 2. 建立单一状态语义，统一“配置页 / 顶栏 / Toast / 同步流程”判定规则。
 3. 将“本地密钥、运行时密钥、环境变量密钥”来源明确化并可观测。
-4. 保持向后兼容：不破坏现有 Profile 数据，不要求用户重新配置。
+4. 完成接口收敛：仅保留 `/api/config/llm/sync` 与 `/api/config/state` 作为配置状态入口。
 
 ## 3. 范围
 
@@ -181,16 +181,17 @@ interface ProfileHealth {
 3. `SettingsDialog` 与 `ProfileSwitcher` 使用同一 selector，不再各自拼逻辑。
 4. Toast 改为“状态机触发”：只在 `syncing -> failed`、`failed -> synced` 等迁移时提示。
 
-## 7. 迁移与兼容
+## 7. 迁移策略（全量切换）
 
-1. 数据兼容：保留现有 `profiles[].secret.hasApiKey`，作为 legacy hint；真实展示逐步迁移到 `ProfileHealth`。
-2. 接口兼容：
-   - 旧 `/api/config/llm` 保留一个版本周期（内部转调 `/sync`）。
-   - 旧 `/api/config/llm/status` 保留，但标记 deprecated。
+1. 数据兼容：保留现有 `profiles[].secret.hasApiKey`，作为本地 secret 元信息，不要求用户重配。
+2. 接口收敛：
+   - 删除旧 `/api/config/llm`。
+   - 删除旧 `/api/config/llm/status`。
+   - 前端仅允许通过 `/api/config/llm/sync` 与 `/api/config/state` 读写配置状态。
 3. 渐进迁移顺序：
    - M1：后端新接口与 ProviderRegistry 落地。
    - M2：前端状态派生统一，UI 切 selector。
-   - M3：清理旧布尔状态与重复同步逻辑。
+   - M3：移除旧接口与旧调用，完成 service 层收口。
 
 ## 8. 验收标准
 
@@ -206,8 +207,8 @@ interface ProfileHealth {
    约束：定义共享 schema（至少共享 JSON 结构与测试用例）。
 2. 风险：状态机引入后若迁移不完整，可能出现双状态源。  
    约束：以 `ProfileHealth` 为唯一 UI 判定源，逐步删除旧判断。
-3. 风险：老接口保留期间可能被新旧调用混用。  
-   约束：统一在 service 层收口，组件不可直接调旧接口。
+3. 风险：后续改动重新引入旧路径，导致状态入口再次分叉。  
+   约束：将 `/api/config/llm/sync` 与 `/api/config/state` 作为唯一白名单接口，并在代码检索/评审中禁止新增旧路径调用。
 
 ## 10. 影响模块（实施参考）
 
@@ -226,4 +227,3 @@ interface ProfileHealth {
 2. `packages/backend/src/services/llm/config.ts`
 3. `packages/backend/src/services/llm/models.ts`
 4. `packages/backend/src/services/llm/types.ts`
-

@@ -4,6 +4,7 @@ import type {
   ExpandMode,
   ProfileHealth,
   PromptTemplates,
+  RequestPathByStyle,
   RuntimeSnapshot
 } from '../stores/settingsStore'
 
@@ -20,8 +21,16 @@ async function parseJsonOrThrow(res: Response) {
     }
   }
   if (!res.ok) {
-    const message = data?.error || data?.message || rawText || `HTTP ${res.status}`
-    throw new Error(String(message))
+    const upstreamMessage = data?.error || data?.message || rawText || ''
+    const upstreamText = String(upstreamMessage).trim().replace(/^Request failed:\s*/i, '')
+    const localStatus = `HTTP ${res.status}`
+
+    if (!upstreamText || upstreamText === localStatus) {
+      throw new Error(`Request failed: ${localStatus}`)
+    }
+
+    const prefix = /^HTTP\s+\d{3}/i.test(upstreamText) ? 'upstream: ' : ''
+    throw new Error(`Request failed: ${localStatus} | ${prefix}${upstreamText}`)
   }
   return data
 }
@@ -85,46 +94,16 @@ export async function loadFile(base64Data: string) {
   return parseJsonOrThrow(res)
 }
 
-export async function updateLLMConfig(config: {
-  apiKey?: string
-  baseURL: string
-  model: string
-  apiStyle: ApiStyle
-  answerAnchorKeywords: string[]
-  temperature: number
-  maxTokens: number
-  contextMaxDepth: number
-  systemPrompt: string
-  promptTemplates: PromptTemplates
-}) {
-  const res = await fetch(`${API_BASE}/config/llm`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config)
-  })
-  return parseJsonOrThrow(res) as Promise<{ success: boolean; hasApiKey: boolean }>
-}
-
-export async function getRuntimeLLMConfigStatus() {
-  const res = await fetch(`${API_BASE}/config/llm/status`, {
-    method: 'GET'
-  })
-  return parseJsonOrThrow(res) as Promise<{
-    hasApiKey: boolean
-    runtimeSnapshot?: RuntimeSnapshot
-    health?: ProfileHealth
-  }>
-}
-
 export async function syncRuntimeLLMConfig(payload: {
   profileId: string
   config: {
     baseURL: string
     model: string
     apiStyle: ApiStyle
+    requestPathByStyle?: RequestPathByStyle
     answerAnchorKeywords: string[]
-    temperature: number
-    maxTokens: number
+    temperature?: number | null
+    maxTokens?: number | null
     contextMaxDepth: number
     systemPrompt: string
     promptTemplates: PromptTemplates
@@ -139,7 +118,6 @@ export async function syncRuntimeLLMConfig(payload: {
   })
   return parseJsonOrThrow(res) as Promise<{
     success: boolean
-    hasApiKey: boolean
     runtimeSnapshot: RuntimeSnapshot
     health: ProfileHealth
     diagnostics?: string[]

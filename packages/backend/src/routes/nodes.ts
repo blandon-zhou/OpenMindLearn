@@ -11,6 +11,7 @@ import {
   resolveRuntimeApiKeySource,
   setLLMConfig,
   type ApiStyle,
+  type RequestPathByStyle,
   type RuntimeSyncState
 } from '../services/llm.js'
 import { buildContextChain, generateContextXml } from '../services/contextService.js'
@@ -24,6 +25,7 @@ export async function nodeRoutes(fastify: FastifyInstance) {
       return { id: Date.now().toString(), content: result.content, thinking: result.thinking }
     } catch (error) {
       const message = error instanceof Error ? error.message : '生成失败'
+      request.log.error({ err: error }, 'nodes/generate failed')
       return reply.code(400).send({ error: message })
     }
   })
@@ -82,6 +84,7 @@ export async function nodeRoutes(fastify: FastifyInstance) {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '扩展失败'
+      request.log.error({ err: error }, 'nodes/expand failed')
       return reply.code(400).send({ error: message })
     }
   })
@@ -90,9 +93,10 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     baseURL?: string
     model?: string
     apiStyle?: ApiStyle
+    requestPathByStyle?: RequestPathByStyle
     answerAnchorKeywords?: string[]
-    temperature?: number
-    maxTokens?: number
+    temperature?: number | null
+    maxTokens?: number | null
     contextMaxDepth?: number
     systemPrompt?: string
     promptTemplates?: {
@@ -120,9 +124,10 @@ export async function nodeRoutes(fastify: FastifyInstance) {
       baseURL?: string
       model?: string
       apiStyle?: ApiStyle
+      requestPathByStyle?: RequestPathByStyle
       answerAnchorKeywords?: string[]
-      temperature?: number
-      maxTokens?: number
+      temperature?: number | null
+      maxTokens?: number | null
       contextMaxDepth?: number
       systemPrompt?: string
       promptTemplates?: {
@@ -136,6 +141,7 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     if (config.baseURL !== undefined) nextConfig.baseURL = config.baseURL
     if (config.model !== undefined) nextConfig.model = config.model
     if (config.apiStyle !== undefined) nextConfig.apiStyle = config.apiStyle
+    if (config.requestPathByStyle !== undefined) nextConfig.requestPathByStyle = config.requestPathByStyle
     if (config.answerAnchorKeywords !== undefined) nextConfig.answerAnchorKeywords = config.answerAnchorKeywords
     if (config.temperature !== undefined) nextConfig.temperature = config.temperature
     if (config.maxTokens !== undefined) nextConfig.maxTokens = config.maxTokens
@@ -197,50 +203,7 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     const body = request.body as SyncRequestBody
     const result = syncRuntimeConfig(body)
     return {
-      ...result,
-      hasApiKey: result.runtimeSnapshot.hasApiKey
-    }
-  })
-
-  // Legacy compatibility wrapper.
-  fastify.post('/api/config/llm', async (request) => {
-    const body = request.body as {
-      apiKey?: string
-      baseURL?: string
-      model?: string
-      apiStyle?: ApiStyle
-      answerAnchorKeywords?: string[]
-      temperature?: number
-      maxTokens?: number
-      contextMaxDepth?: number
-      systemPrompt?: string
-      promptTemplates?: {
-        directExpand?: string
-        targetedQuestion?: string
-        contextEnvelope?: string
-      }
-    }
-
-    const result = syncRuntimeConfig({
-      profileId: 'legacy-profile',
-      config: {
-        baseURL: body.baseURL,
-        model: body.model,
-        apiStyle: body.apiStyle,
-        answerAnchorKeywords: body.answerAnchorKeywords,
-        temperature: body.temperature,
-        maxTokens: body.maxTokens,
-        contextMaxDepth: body.contextMaxDepth,
-        systemPrompt: body.systemPrompt,
-        promptTemplates: body.promptTemplates
-      },
-      apiKey: body.apiKey,
-      allowRuntimeApiKeyFallback: true
-    })
-
-    return {
-      success: result.success,
-      hasApiKey: result.runtimeSnapshot.hasApiKey
+      ...result
     }
   })
 
@@ -257,23 +220,6 @@ export async function nodeRoutes(fastify: FastifyInstance) {
       runtimeSnapshot,
       health,
       diagnostics: []
-    }
-  })
-
-  // Legacy compatibility wrapper.
-  fastify.get('/api/config/llm/status', async (request) => {
-    const profileId = String((request.query as { profileId?: string } | undefined)?.profileId || 'active-profile')
-    const runtimeSnapshot = createRuntimeSnapshot()
-    const health = createProfileHealth({
-      profileId,
-      snapshot: runtimeSnapshot,
-      runtimeSyncState: 'idle'
-    })
-
-    return {
-      hasApiKey: runtimeSnapshot.hasApiKey,
-      runtimeSnapshot,
-      health
     }
   })
 

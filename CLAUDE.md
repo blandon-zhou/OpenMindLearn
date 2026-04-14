@@ -24,7 +24,7 @@ OpenMindLearn (开放思维学习) is an interactive learning system based on a 
 # Setup
 pnpm install
 
-# Development (frontend: 5173, backend: 3000)
+# Development (frontend: 5173, backend: 15174)
 pnpm dev
 
 # Build

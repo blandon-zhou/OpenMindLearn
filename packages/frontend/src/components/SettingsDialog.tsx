@@ -108,10 +108,14 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [clearApiKeyOnSave, setClearApiKeyOnSave] = useState(false)
   const [baseURL, setBaseURL] = useState('')
   const [modelsPath, setModelsPath] = useState('')
+  const [requestPathOpenAIChat, setRequestPathOpenAIChat] = useState('')
+  const [requestPathOpenAIResponses, setRequestPathOpenAIResponses] = useState('')
+  const [requestPathAnthropic, setRequestPathAnthropic] = useState('')
+  const [requestPathGoogleGemini, setRequestPathGoogleGemini] = useState('')
   const [model, setModel] = useState('')
   const [apiStyle, setApiStyle] = useState<ApiStyle>('openai_chat')
-  const [temperature, setTemperature] = useState('0.7')
-  const [maxTokens, setMaxTokens] = useState('4096')
+  const [temperature, setTemperature] = useState('')
+  const [maxTokens, setMaxTokens] = useState('')
   const [contextMaxDepth, setContextMaxDepth] = useState(String(llmSettings.contextMaxDepth))
   const [promptLocale, setPromptLocale] = useState<LocaleCode>(llmSettings.promptLocale)
   const [answerAnchorKeywordsText, setAnswerAnchorKeywordsText] = useState(llmSettings.answerAnchorKeywords.join('\n'))
@@ -129,6 +133,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [isModelLibraryOpen, setIsModelLibraryOpen] = useState(false)
   const [isProfileEditorOpen, setIsProfileEditorOpen] = useState(false)
   const [showModelsPathHelp, setShowModelsPathHelp] = useState(false)
+  const [showRequestPathHelp, setShowRequestPathHelp] = useState(false)
   const [profileSearchKeyword, setProfileSearchKeyword] = useState('')
   const [modelSearchKeyword, setModelSearchKeyword] = useState('')
   const [isSaving, setIsSaving] = useState(false)
@@ -194,6 +199,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     setIsProfileEditorOpen(false)
     setIsModelLibraryOpen(false)
     setShowModelsPathHelp(false)
+    setShowRequestPathHelp(false)
     setSwitchingProfileId('')
     setProfileSearchKeyword('')
     setModelSearchKeyword('')
@@ -213,13 +219,18 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     setClearApiKeyOnSave(false)
     setBaseURL(profile.config.baseURL)
     setModelsPath(profile.config.modelsPath || '')
+    setRequestPathOpenAIChat(profile.config.requestPathByStyle.openai_chat || '')
+    setRequestPathOpenAIResponses(profile.config.requestPathByStyle.openai_response || '')
+    setRequestPathAnthropic(profile.config.requestPathByStyle.anthropic || '')
+    setRequestPathGoogleGemini(profile.config.requestPathByStyle.google_gemini || '')
     setModel(profile.config.model)
     setApiStyle(profile.config.apiStyle)
-    setTemperature(String(profile.config.temperature))
-    setMaxTokens(String(profile.config.maxTokens))
+    setTemperature(profile.config.temperature === null ? '' : String(profile.config.temperature))
+    setMaxTokens(profile.config.maxTokens === null ? '' : String(profile.config.maxTokens))
     setModelOptions(profile.modelOptionsCache || [])
     setModelSearchKeyword(profile.config.model)
     setShowModelsPathHelp(false)
+    setShowRequestPathHelp(false)
   }, [open, selectedProfileId])
 
   const previewRendered = useMemo(() => {
@@ -343,6 +354,35 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     return profileReadinessById[profileId] === 'ready'
   }
 
+  const getRequestPathByStyle = (style: ApiStyle): string => {
+    if (style === 'google_gemini') return requestPathGoogleGemini
+    if (style === 'anthropic') return requestPathAnthropic
+    if (style === 'openai_response') return requestPathOpenAIResponses
+    return requestPathOpenAIChat
+  }
+
+  const setRequestPathByStyle = (style: ApiStyle, value: string) => {
+    if (style === 'google_gemini') {
+      setRequestPathGoogleGemini(value)
+      return
+    }
+    if (style === 'anthropic') {
+      setRequestPathAnthropic(value)
+      return
+    }
+    if (style === 'openai_response') {
+      setRequestPathOpenAIResponses(value)
+      return
+    }
+    setRequestPathOpenAIChat(value)
+  }
+
+  const getRequestPathPlaceholder = (style: ApiStyle): string => {
+    if (style === 'google_gemini') return '/gemini/v1'
+    if (style === 'anthropic') return '/anthropic/v1'
+    return '/openai/v1'
+  }
+
   const parseNumber = (
     value: string,
     fallback: number,
@@ -351,6 +391,21 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     integer: boolean = false
   ): number => {
     const parsed = integer ? parseInt(value, 10) : Number(value)
+    if (!Number.isFinite(parsed)) return fallback
+    const normalized = Math.max(min, Math.min(max, parsed))
+    return integer ? Math.round(normalized) : normalized
+  }
+
+  const parseOptionalNumber = (
+    value: string,
+    fallback: number | null,
+    min: number,
+    max: number,
+    integer: boolean = false
+  ): number | null => {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    const parsed = integer ? parseInt(trimmed, 10) : Number(trimmed)
     if (!Number.isFinite(parsed)) return fallback
     const normalized = Math.max(min, Math.min(max, parsed))
     return integer ? Math.round(normalized) : normalized
@@ -372,6 +427,12 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
         ...selectedProfile.config,
         baseURL: baseURL.trim(),
         modelsPath: modelsPath.trim(),
+        requestPathByStyle: {
+          openai_chat: requestPathOpenAIChat.trim(),
+          openai_response: requestPathOpenAIResponses.trim(),
+          anthropic: requestPathAnthropic.trim(),
+          google_gemini: requestPathGoogleGemini.trim()
+        },
         model: model.trim(),
         apiStyle
       }
@@ -463,10 +524,16 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
     setIsSavingProfile(true)
 
-    const nextTemperature = parseNumber(temperature, selectedProfile.config.temperature, 0, 2)
-    const nextMaxTokens = parseNumber(maxTokens, selectedProfile.config.maxTokens, 1, UNBOUNDED_MAX_TOKENS, true)
+    const nextTemperature = parseOptionalNumber(temperature, selectedProfile.config.temperature, 0, 2)
+    const nextMaxTokens = parseOptionalNumber(maxTokens, selectedProfile.config.maxTokens, 1, UNBOUNDED_MAX_TOKENS, true)
     const nextBaseURL = baseURL.trim()
     const nextModelsPath = modelsPath.trim()
+    const nextRequestPathByStyle = {
+      openai_chat: requestPathOpenAIChat.trim(),
+      openai_response: requestPathOpenAIResponses.trim(),
+      anthropic: requestPathAnthropic.trim(),
+      google_gemini: requestPathGoogleGemini.trim()
+    }
     const nextModel = model.trim()
 
     if (nextName && nextName !== selectedProfile.name) {
@@ -477,6 +544,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     updateLLMProfileConfig(selectedProfile.id, {
       baseURL: nextBaseURL,
       modelsPath: nextModelsPath,
+      requestPathByStyle: nextRequestPathByStyle,
       model: nextModel,
       apiStyle,
       temperature: nextTemperature,
@@ -1255,10 +1323,50 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">{t('settings.apiStyle')}</label>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-sm font-medium">{t('settings.apiStyle')}</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={getRequestPathByStyle(apiStyle)}
+                        onChange={(e) => setRequestPathByStyle(apiStyle, e.target.value)}
+                        className="h-8 w-[220px] max-w-[40vw] px-2 text-xs border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        aria-label={t('settings.requestPath.title')}
+                        placeholder={getRequestPathPlaceholder(apiStyle)}
+                      />
+                      <div className="relative">
+                        <button
+                          type="button"
+                          className="h-6 w-6 rounded-full border border-border text-xs text-muted-foreground hover:bg-accent"
+                          aria-label={t('settings.requestPath.help')}
+                          aria-describedby={showRequestPathHelp ? 'request-path-help-tooltip' : undefined}
+                          onMouseEnter={() => setShowRequestPathHelp(true)}
+                          onMouseLeave={() => setShowRequestPathHelp(false)}
+                          onFocus={() => setShowRequestPathHelp(true)}
+                          onBlur={() => setShowRequestPathHelp(false)}
+                          onClick={() => setShowRequestPathHelp((prev) => !prev)}
+                        >
+                          ?
+                        </button>
+                        {showRequestPathHelp && (
+                          <div
+                            id="request-path-help-tooltip"
+                            role="tooltip"
+                            className="absolute right-0 top-full mt-1 w-[320px] max-w-[70vw] rounded border border-border bg-background px-2.5 py-2 text-[11px] leading-relaxed text-muted-foreground shadow-lg"
+                            style={{ zIndex: Z_INDEX.settingsTooltip }}
+                          >
+                            {t('settings.requestPath.help')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                   <select
                     value={apiStyle}
-                    onChange={(e) => setApiStyle(e.target.value as ApiStyle)}
+                    onChange={(e) => {
+                      setApiStyle(e.target.value as ApiStyle)
+                      setShowRequestPathHelp(false)
+                    }}
                     className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   >
                     <option value="openai_chat">{t('settings.apiStyle.openai')}</option>
@@ -1282,7 +1390,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                       step={0.1}
                       value={temperature}
                       onChange={(e) => setTemperature(e.target.value)}
-                      className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      placeholder={t('settings.advanced.optionalPlaceholder')}
+                      className="w-full px-3 py-2 border border-border rounded bg-background text-foreground placeholder:text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                   </div>
                   <div>
@@ -1293,7 +1402,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                       step={1}
                       value={maxTokens}
                       onChange={(e) => setMaxTokens(e.target.value)}
-                      className="w-full px-3 py-2 border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      placeholder={t('settings.advanced.optionalPlaceholder')}
+                      className="w-full px-3 py-2 border border-border rounded bg-background text-foreground placeholder:text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                   </div>
                 </div>
