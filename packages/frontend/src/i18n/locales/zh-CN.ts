@@ -30,6 +30,8 @@ export const zhCN = {
   'toolbar.open.title': '打开文件',
   'toolbar.save': '保存',
   'toolbar.save.title': '保存文件',
+  'toolbar.tab.new': '新建标签',
+  'toolbar.tab.close': '关闭标签',
   'settings.title': '设置',
   'settings.tab.llm': 'LLM 配置',
   'settings.tab.prompt': 'Prompt 配置',
@@ -270,9 +272,12 @@ export const zhCN = {
   'toast.attachmentDownloadFailed': '文件下载失败，请重试',
   'toast.localDraftRestored': '已恢复本地暂存内容',
   'toast.localDraftStoreFailed': '本地暂存失败，请及时手动保存',
+  'toast.maxOpenedDocsExceeded': '最多可同时打开 {count} 个文件，请先关闭部分标签',
   'toast.contextUnavailable': '无法获取节点上下文，请重试',
   'toast.regionCreated': '区域已创建',
   'confirm.newUnsaved': '当前文件未保存，确定要新建吗？',
+  'confirm.closeTabSave': '标签“{name}”有未保存内容。点击“确定”先保存并关闭；点击“取消”选择是否直接关闭。',
+  'confirm.closeTabDiscard': '确定不保存并关闭该标签吗？',
   'confirm.restoreLocalDraft': '检测到本地暂存（{time}），是否恢复？',
   'app.syncLLMFailed': '同步 LLM 配置失败:'
 } as const

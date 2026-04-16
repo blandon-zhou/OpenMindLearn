@@ -139,10 +139,26 @@ export function Canvas() {
     focusSearchResult,
     resetSearch
   } = useCanvasSearch(nodes, viewport)
-  const { handleSave, handleLoad, handleNew, handleRestoreLocalDraft } = useCanvasFileIO({
+  const {
+    documents,
+    activeDocId,
+    openedDocIds,
+    handleSave,
+    handleLoad,
+    handleNew,
+    handleSwitchDoc,
+    handleCloseDoc,
+    handleCloseActiveDoc,
+    handleRenameDoc,
+    handleRestoreLocalDraft
+  } = useCanvasFileIO({
     nodes,
     edges,
     regions,
+    initialInput,
+    initialGenerating,
+    initialImages,
+    initialAttachments,
     setNodes,
     setEdges,
     setRegions,
@@ -510,13 +526,33 @@ export function Canvas() {
     setChatBranchParentNodeId(null)
   }, [conversationView])
 
-  const handleOpenNewGraph = useCallback(() => {
-    handleNew()
+  const resetDocScopedPanels = useCallback(() => {
     setSurfaceMode('canvas')
     setChatActiveNodeId(null)
     setChatBranchParentNodeId(null)
     setChatDraft('')
-  }, [handleNew])
+    setDetailPanel(null)
+    setMetaEditor(null)
+    setVersionDialog(null)
+  }, [])
+
+  const handleOpenNewGraph = useCallback(() => {
+    handleNew()
+    resetDocScopedPanels()
+  }, [handleNew, resetDocScopedPanels])
+
+  const handleSwitchDocument = useCallback((docId: string) => {
+    handleSwitchDoc(docId)
+    resetDocScopedPanels()
+  }, [handleSwitchDoc, resetDocScopedPanels])
+
+  const handleCloseDocument = useCallback(async (docId: string) => {
+    const wasActive = docId === activeDocId
+    await handleCloseDoc(docId)
+    if (wasActive) {
+      resetDocScopedPanels()
+    }
+  }, [activeDocId, handleCloseDoc, resetDocScopedPanels])
 
   const handleSurfaceModeChange = useCallback((mode: 'canvas' | 'chat') => {
     setSurfaceMode(mode)
@@ -564,12 +600,61 @@ export function Canvas() {
     })
   }, [showToast, t])
 
+  useEffect(() => {
+    resetDocScopedPanels()
+  }, [activeDocId, resetDocScopedPanels])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isMod = event.metaKey || event.ctrlKey
+      if (!isMod) return
+
+      if (event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        void handleSave()
+        return
+      }
+
+      if (event.key.toLowerCase() === 'w') {
+        event.preventDefault()
+        void handleCloseActiveDoc()
+        return
+      }
+
+      if (!event.shiftKey) return
+
+      const key = event.key
+      if (key !== ']' && key !== '[') return
+      event.preventDefault()
+      if (!activeDocId || openedDocIds.length <= 1) return
+      const currentIndex = openedDocIds.indexOf(activeDocId)
+      if (currentIndex < 0) return
+      const nextIndex = key === ']'
+        ? (currentIndex + 1) % openedDocIds.length
+        : (currentIndex - 1 + openedDocIds.length) % openedDocIds.length
+      const nextDocId = openedDocIds[nextIndex]
+      if (nextDocId) {
+        handleSwitchDocument(nextDocId)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activeDocId, handleCloseActiveDoc, handleSave, handleSwitchDocument, openedDocIds])
+
   return (
     <div className="w-screen h-screen flex flex-col bg-background">
       <Toolbar
+        documents={documents}
+        activeDocId={activeDocId}
+        onDocSwitch={handleSwitchDocument}
+        onDocClose={(docId) => {
+          void handleCloseDocument(docId)
+        }}
+        onDocNew={handleOpenNewGraph}
+        onDocRename={handleRenameDoc}
         onSave={handleSave}
         onLoad={handleLoad}
-        onNew={handleOpenNewGraph}
         mode={canvasMode}
         surfaceMode={surfaceMode}
         onModeChange={setCanvasMode}

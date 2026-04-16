@@ -1,15 +1,25 @@
-import { useState } from 'react'
-import { useGraphStore } from '../stores/graphStore'
-import { FileText, Save, FolderOpen, FilePlus, Settings, Eye, GraduationCap, MessageSquareText } from 'lucide-react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { FolderOpen, Save, Settings, Eye, GraduationCap, MessageSquareText, X, Plus, FileText } from 'lucide-react'
 import { SettingsDialog } from './SettingsDialog'
 import { ProfileSwitcher } from './ProfileSwitcher'
 import type { CanvasMode } from '../types/canvas'
 import { useI18n } from '../hooks/useI18n'
 
+interface ToolbarDocumentItem {
+  id: string
+  fileName: string
+  isDirty: boolean
+}
+
 interface ToolbarProps {
+  documents: ToolbarDocumentItem[]
+  activeDocId: string | null
+  onDocSwitch: (docId: string) => void
+  onDocClose: (docId: string) => void
+  onDocNew: () => void
+  onDocRename: (docId: string, nextName: string) => void
   onSave: () => void
   onLoad: () => void
-  onNew: () => void
   mode: CanvasMode
   surfaceMode: 'canvas' | 'chat'
   onModeChange: (mode: CanvasMode) => void
@@ -17,72 +27,137 @@ interface ToolbarProps {
 }
 
 export function Toolbar({
+  documents,
+  activeDocId,
+  onDocSwitch,
+  onDocClose,
+  onDocNew,
+  onDocRename,
   onSave,
   onLoad,
-  onNew,
   mode,
   surfaceMode,
   onModeChange,
   onSurfaceModeChange
 }: ToolbarProps) {
-  const { fileName, isDirty, setFileName } = useGraphStore()
   const { t } = useI18n()
-  const [isEditing, setIsEditing] = useState(false)
-  const [editValue, setEditValue] = useState(fileName)
   const [showSettings, setShowSettings] = useState(false)
+  const [editingDocId, setEditingDocId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const tabScrollRef = useRef<HTMLDivElement>(null)
 
-  const handleFileNameClick = () => {
-    setIsEditing(true)
-    setEditValue(fileName)
+  const activeDoc = useMemo(() => {
+    if (!activeDocId) return null
+    return documents.find((doc) => doc.id === activeDocId) || null
+  }, [activeDocId, documents])
+
+  const startRename = (docId: string, fileName: string) => {
+    setEditingDocId(docId)
+    setEditingName(fileName)
   }
 
-  const handleFileNameBlur = () => {
-    setIsEditing(false)
-    if (editValue.trim()) {
-      setFileName(editValue.trim())
-    } else {
-      setEditValue(fileName)
+  const finishRename = () => {
+    if (!editingDocId) return
+    const fallbackName = documents.find((doc) => doc.id === editingDocId)?.fileName || ''
+    const nextName = editingName.trim()
+    if (nextName) {
+      onDocRename(editingDocId, nextName)
+    } else if (fallbackName) {
+      setEditingName(fallbackName)
     }
+    setEditingDocId(null)
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleFileNameBlur()
-    } else if (e.key === 'Escape') {
-      setIsEditing(false)
-      setEditValue(fileName)
-    }
+  const cancelRename = () => {
+    setEditingDocId(null)
+    setEditingName('')
   }
+
+  const handleTabWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    const container = tabScrollRef.current
+    if (!container) return
+    if (container.scrollWidth <= container.clientWidth) return
+
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      ? event.deltaX
+      : event.deltaY
+
+    if (delta === 0) return
+    event.preventDefault()
+    container.scrollLeft += delta
+  }, [])
 
   return (
-    <div className="h-14 border-b border-border bg-background text-foreground relative flex items-center justify-between px-4">
-      {/* 左侧：文件名和状态 */}
-      <div className="flex items-center gap-2">
-        <FileText className="w-5 h-5 text-muted-foreground" />
-        {isEditing ? (
-          <input
-            type="text"
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onBlur={handleFileNameBlur}
-            onKeyDown={handleKeyDown}
-            autoFocus
-            className="px-2 py-1 border border-border bg-background rounded focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-        ) : (
-          <button
-            onClick={handleFileNameClick}
-            className="px-2 py-1 hover:bg-accent rounded font-medium"
-          >
-            {fileName}
-          </button>
-        )}
-        {isDirty && (
-          <span className="text-muted-foreground text-sm">• {t('toolbar.unsaved')}</span>
+    <div className="h-14 border-b border-border bg-background text-foreground px-4 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
+      <div className="flex items-center gap-2 min-w-0">
+        <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+        <div
+          ref={tabScrollRef}
+          onWheel={handleTabWheel}
+          className="tabs-scroll flex-1 min-w-0 overflow-x-auto"
+        >
+          <div className="flex items-center gap-1 w-max min-w-full">
+          {documents.map((doc) => {
+            const isActive = doc.id === activeDocId
+            const isEditing = editingDocId === doc.id
+            return (
+              <div
+                key={doc.id}
+                className={`group inline-flex items-center gap-1.5 px-2 py-1 rounded border text-sm max-w-[220px] shrink-0 ${
+                  isActive
+                    ? 'border-primary/50 bg-accent text-foreground'
+                    : 'border-border/70 bg-muted/40 text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editingName}
+                    onChange={(event) => setEditingName(event.target.value)}
+                    onBlur={finishRename}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') finishRename()
+                      if (event.key === 'Escape') cancelRename()
+                    }}
+                    autoFocus
+                    className="px-1 py-0.5 text-xs bg-background border border-border rounded min-w-[80px] max-w-[150px]"
+                  />
+                ) : (
+                  <button
+                    onClick={() => onDocSwitch(doc.id)}
+                    onDoubleClick={() => startRename(doc.id, doc.fileName)}
+                    className="truncate text-left"
+                    title={doc.fileName}
+                  >
+                    {doc.fileName}
+                  </button>
+                )}
+                {doc.isDirty && <span className="text-[10px] text-muted-foreground">●</span>}
+                <button
+                  onClick={() => onDocClose(doc.id)}
+                  className="opacity-70 hover:opacity-100 rounded p-0.5"
+                  title={t('toolbar.tab.close')}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )
+          })}
+          </div>
+        </div>
+        <button
+          onClick={onDocNew}
+          className="inline-flex items-center justify-center h-7 w-7 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent shrink-0"
+          title={t('toolbar.tab.new')}
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+        {activeDoc?.isDirty && (
+          <span className="text-muted-foreground text-xs whitespace-nowrap">• {t('toolbar.unsaved')}</span>
         )}
       </div>
 
-      <div className="absolute left-1/2 -translate-x-1/2 flex items-center p-1 rounded-lg border border-border bg-muted/40 gap-1">
+      <div className="flex items-center p-1 rounded-lg border border-border bg-muted/40 gap-1 justify-self-center">
         <button
           onClick={() => {
             onModeChange('learn')
@@ -127,8 +202,7 @@ export function Toolbar({
         </button>
       </div>
 
-      {/* 右侧：操作按钮 */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0 justify-self-end">
         <ProfileSwitcher />
         <button
           onClick={() => setShowSettings(true)}
@@ -137,14 +211,6 @@ export function Toolbar({
         >
           <Settings className="w-4 h-4" />
           {t('toolbar.settings')}
-        </button>
-        <button
-          onClick={onNew}
-          className="flex items-center gap-2 px-3 py-1.5 hover:bg-accent rounded text-sm"
-          title={t('toolbar.new.title')}
-        >
-          <FilePlus className="w-4 h-4" />
-          {t('toolbar.new')}
         </button>
         <button
           onClick={onLoad}

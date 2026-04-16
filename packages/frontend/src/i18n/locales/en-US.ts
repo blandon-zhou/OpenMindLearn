@@ -30,6 +30,8 @@ export const enUS = {
   'toolbar.open.title': 'Open file',
   'toolbar.save': 'Save',
   'toolbar.save.title': 'Save file',
+  'toolbar.tab.new': 'New tab',
+  'toolbar.tab.close': 'Close tab',
   'settings.title': 'Settings',
   'settings.tab.llm': 'LLM',
   'settings.tab.prompt': 'Prompt',
@@ -270,9 +272,12 @@ export const enUS = {
   'toast.attachmentDownloadFailed': 'Failed to download file. Please retry.',
   'toast.localDraftRestored': 'Recovered local draft.',
   'toast.localDraftStoreFailed': 'Failed to store local draft. Please save manually.',
+  'toast.maxOpenedDocsExceeded': 'You can open up to {count} files at once. Close some tabs first.',
   'toast.contextUnavailable': 'Cannot read node context. Please retry.',
   'toast.regionCreated': 'Region created.',
   'confirm.newUnsaved': 'Current file is not saved. Create a new one anyway?',
+  'confirm.closeTabSave': 'Tab \"{name}\" has unsaved changes. Press OK to save then close, or Cancel for discard options.',
+  'confirm.closeTabDiscard': 'Close this tab without saving?',
   'confirm.restoreLocalDraft': 'A local draft from {time} was found. Restore it?',
   'app.syncLLMFailed': 'Failed to sync LLM config:'
 } as const
