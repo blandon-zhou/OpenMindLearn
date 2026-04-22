@@ -53,8 +53,9 @@ export function useCanvasNodes(
     if (!current || current.size === 0) return 0
     const controllers = Array.from(current)
     controllers.forEach((controller) => controller.abort())
+    showToast(tFromSettings('toast.nodeGenerationStopped'), 'success')
     return controllers.length
-  }, [])
+  }, [showToast])
 
   const registerExternalGenerationController = useCallback((nodeId: string, controller: AbortController) => {
     registerGenerationController(nodeId, controller)

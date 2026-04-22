@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { CornerDownRight, Loader2, MessageCirclePlus, Send, Split } from 'lucide-react'
+import { CornerDownRight, Loader2, MessageCirclePlus, Send, Split, Square } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { cn } from '../../utils/cn'
@@ -17,6 +17,7 @@ interface ChatShellProps {
   disableSend: boolean
   onDraftChange: (value: string) => void
   onSubmit: () => void
+  onStopGenerating: (nodeId: string) => void
   onCancelBranchParent: () => void
   onSelectBranchParent: (nodeId: string) => void
   onSwitchBranch: (nodeId: string) => void
@@ -36,6 +37,7 @@ export function ChatShell({
   disableSend,
   onDraftChange,
   onSubmit,
+  onStopGenerating,
   onCancelBranchParent,
   onSelectBranchParent,
   onSwitchBranch,
@@ -56,7 +58,16 @@ export function ChatShell({
     return getNodePreviewLabel(branchParentNodeId)
   }, [branchParentNodeId, getNodePreviewLabel])
 
+  const activeGeneratingNodeId = useMemo(() => {
+    if (activeNodeId && nodeById.get(activeNodeId)?.isGenerating) {
+      return activeNodeId
+    }
+    return turns.find((turn) => turn.isGenerating)?.nodeId || null
+  }, [activeNodeId, nodeById, turns])
+
   const handleComposerKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    const nativeEvent = event.nativeEvent as KeyboardEvent
+    if (nativeEvent.isComposing || nativeEvent.keyCode === 229) return
     if (event.key !== 'Enter' || event.shiftKey) return
     event.preventDefault()
     if (disableSend || !draft.trim()) return
@@ -105,9 +116,18 @@ export function ChatShell({
                     {t('chat.assistantLabel')} #{index + 1}
                   </div>
                   {turn.isGenerating && (
-                    <div className="inline-flex items-center gap-1 text-xs text-primary">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      {t('common.generating')}
+                    <div className="inline-flex items-center gap-2">
+                      <div className="inline-flex items-center gap-1 text-xs text-primary">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        {t('common.generating')}
+                      </div>
+                      <button
+                        onClick={() => onStopGenerating(turn.nodeId)}
+                        className="inline-flex items-center gap-1 rounded border border-destructive/45 px-2 py-1 text-[11px] text-destructive hover:bg-destructive/10 transition-colors"
+                      >
+                        <Square className="w-3 h-3 fill-current" />
+                        {t('common.stopGenerating')}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -210,14 +230,24 @@ export function ChatShell({
               placeholder={t('chat.input.placeholder')}
               className="flex-1 resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary/45"
             />
-            <button
-              onClick={onSubmit}
-              disabled={disableSend || !draft.trim()}
-              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              {t('chat.send')}
-            </button>
+            {activeGeneratingNodeId ? (
+              <button
+                onClick={() => onStopGenerating(activeGeneratingNodeId)}
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-destructive/45 px-3 text-sm text-destructive transition-colors hover:bg-destructive/10"
+              >
+                <Square className="w-4 h-4 fill-current" />
+                {t('common.stopGenerating')}
+              </button>
+            ) : (
+              <button
+                onClick={onSubmit}
+                disabled={disableSend || !draft.trim()}
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {t('chat.send')}
+              </button>
+            )}
           </div>
         </div>
       </div>

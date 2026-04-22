@@ -1,17 +1,25 @@
+import { useEffect } from 'react'
 import type React from 'react'
+import { createPortal } from 'react-dom'
 import { Download, MessageSquareText, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { NodeAttachment, NodeImage } from '../../types'
+import { ContextPanel } from '../ContextPanel'
+import type { Node, NodeAttachment, NodeImage } from '../../types'
 import type { DetailPanelState } from '../../types/canvas'
+import type { NodeCardData } from '../../types/nodeCard'
 import { downloadNodeAttachment, formatFileSize } from '../../utils/attachment'
+import { cn } from '../../utils/cn'
+import { useNodeCardSelection } from '../../hooks/useNodeCardSelection'
 import { useToastStore } from '../../stores/toastStore'
+import { Z_INDEX } from '../../utils/zIndex'
 
 interface NodeDetailPanelProps {
   detailPanel: DetailPanelState | null
   detailPanelWidth: number
   detailFontSize: number
-  nodes: Array<{ id: string; data?: Record<string, unknown> }>
+  allowSelectionActions: boolean
+  nodes: Array<{ id: string; data?: Partial<NodeCardData> }>
   onStartResize: (event: React.MouseEvent) => void
   onChangeFontSize: (next: number | ((current: number) => number)) => void
   onClose: () => void
@@ -24,6 +32,7 @@ export function NodeDetailPanel({
   detailPanel,
   detailPanelWidth,
   detailFontSize,
+  allowSelectionActions,
   nodes,
   onStartResize,
   onChangeFontSize,
@@ -33,11 +42,20 @@ export function NodeDetailPanel({
   t
 }: NodeDetailPanelProps) {
   const { showToast } = useToastStore()
+  const selection = useNodeCardSelection()
+
+  useEffect(() => {
+    selection.clearReadOnlyState()
+  }, [detailPanel?.nodeId, selection.clearReadOnlyState])
+
   if (!detailPanel) return null
 
   const detailNode = nodes.find((n) => n.id === detailPanel.nodeId)
+  const detailNodeData = (detailNode?.data || {}) as Partial<NodeCardData>
   const detailImages: NodeImage[] = (detailNode?.data?.images as NodeImage[]) || []
   const detailAttachments: NodeAttachment[] = (detailNode?.data?.attachments as NodeAttachment[]) || []
+  const detailAllNodes = (detailNodeData.allNodes || []) as Node[]
+  const canExpandFromSelection = allowSelectionActions && typeof detailNodeData.onExpand === 'function'
 
   const handleDownloadAttachment = (attachment: NodeAttachment) => {
     try {
@@ -171,6 +189,8 @@ export function NodeDetailPanel({
           </details>
         )}
         <div
+          ref={selection.contentRef}
+          onMouseUp={() => selection.handleTextSelection(!canExpandFromSelection, false)}
           className="prose prose-slate dark:prose-invert max-w-none prose-headings:text-foreground prose-p:text-foreground/90 prose-li:text-foreground/90 prose-strong:text-foreground"
           style={{
             fontSize: `${detailFontSize}px`,
@@ -180,6 +200,101 @@ export function NodeDetailPanel({
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{detailPanel.content}</ReactMarkdown>
         </div>
       </div>
+
+      {canExpandFromSelection && selection.selectionMenu && !selection.showPromptInput && !selection.showContextPanel && createPortal(
+        <div
+          className="selection-menu fixed bg-background text-foreground rounded-lg shadow-lg border border-border p-1 flex gap-1"
+          style={{
+            zIndex: Z_INDEX.canvasSelectionMenu,
+            left: selection.selectionMenu.x,
+            top: selection.selectionMenu.y,
+            transform: 'translateX(-50%)'
+          }}
+        >
+          <button
+            onClick={() => selection.handleDirectExpand(detailNodeData.onExpand!)}
+            className="px-3 py-1.5 text-xs font-medium rounded hover:bg-accent transition-colors whitespace-nowrap"
+          >
+            {t('node.selection.direct')}
+          </button>
+          <button
+            onClick={() => selection.handleCustomPrompt()}
+            className="px-3 py-1.5 text-xs font-medium rounded hover:bg-accent transition-colors whitespace-nowrap"
+          >
+            {t('node.selection.targeted')}
+          </button>
+          <button
+            onClick={() => selection.handleContextExpand(detailAllNodes, showToast)}
+            className="px-3 py-1.5 text-xs font-medium rounded hover:bg-accent transition-colors whitespace-nowrap"
+          >
+            {t('node.selection.context')}
+          </button>
+        </div>,
+        document.body
+      )}
+
+      {canExpandFromSelection && selection.showPromptInput && selection.selectionMenu && createPortal(
+        <div
+          className="selection-menu fixed bg-background text-foreground rounded-lg shadow-lg border border-border p-3"
+          style={{
+            zIndex: Z_INDEX.canvasSelectionMenu,
+            left: selection.selectionMenu.x,
+            top: selection.selectionMenu.y,
+            transform: 'translateX(-50%)',
+            width: '320px'
+          }}
+        >
+          <textarea
+            value={selection.customPrompt}
+            onChange={(event) => selection.setCustomPrompt(event.target.value)}
+            rows={3}
+            className="w-full p-2 text-sm rounded border border-border/60 bg-background resize-none outline-none focus:border-primary/40 mb-2"
+            placeholder={t('node.selection.placeholder')}
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => selection.clearSelection()}
+              className="px-3 py-1 text-xs font-medium rounded hover:bg-accent transition-colors"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              onClick={() => selection.handleSubmitCustomPrompt(detailNodeData.onExpand!)}
+              disabled={!selection.customPrompt.trim()}
+              className={cn(
+                'px-3 py-1 text-xs font-medium rounded transition-colors',
+                'bg-primary text-primary-foreground hover:bg-primary/90',
+                'disabled:opacity-40 disabled:cursor-not-allowed'
+              )}
+            >
+              {t('node.selection.confirmExpand')}
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {canExpandFromSelection && selection.showContextPanel && selection.selectionMenu && createPortal(
+        <ContextPanel
+          currentNodeId={detailPanel.nodeId}
+          allNodes={detailAllNodes}
+          onDirectExpand={(selectedNodeIds) => {
+            const text = selection.selectionMenu?.text
+            const sourceRef = selection.selectionMenu?.sourceRef
+            selection.clearSelection()
+            if (text) {
+              detailNodeData.onExpand?.(text, selectedNodeIds, sourceRef, 'direct')
+            }
+          }}
+          onTargetedQuestion={(selectedNodeIds) => {
+            selection.handleContextConfirm(selectedNodeIds)
+            selection.handleCustomPrompt()
+          }}
+          onClose={selection.closeContextPanel}
+        />,
+        document.body
+      )}
     </div>
   )
 }

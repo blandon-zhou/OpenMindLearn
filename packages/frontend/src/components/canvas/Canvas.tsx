@@ -526,6 +526,10 @@ export function Canvas() {
     setChatBranchParentNodeId(null)
   }, [conversationView])
 
+  const handleStopChatGeneration = useCallback((nodeId: string) => {
+    stopNodeGeneration(nodeId)
+  }, [stopNodeGeneration])
+
   const resetDocScopedPanels = useCallback(() => {
     setSurfaceMode('canvas')
     setChatActiveNodeId(null)
@@ -802,6 +806,7 @@ export function Canvas() {
           detailPanel={detailPanel}
           detailPanelWidth={detailPanelWidth}
           detailFontSize={detailFontSize}
+          allowSelectionActions={canvasMode === 'learn'}
           nodes={nodes as any[]}
           onStartResize={handleStartResize}
           onChangeFontSize={setDetailFontSize}
@@ -824,6 +829,7 @@ export function Canvas() {
           disableSend={chatSubmitting || activeChatNodeGenerating}
           onDraftChange={setChatDraft}
           onSubmit={handleSubmitChat}
+          onStopGenerating={handleStopChatGeneration}
           onCancelBranchParent={() => setChatBranchParentNodeId(null)}
           onSelectBranchParent={setChatBranchParentNodeId}
           onSwitchBranch={handleSwitchChatBranch}
