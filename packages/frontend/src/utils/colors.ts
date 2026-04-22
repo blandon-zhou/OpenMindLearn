@@ -1,13 +1,28 @@
 export const EXPANSION_COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#6366f1'
+  '#2563eb',
+  '#7c3aed',
+  '#db2777',
+  '#dc2626',
+  '#ea580c',
+  '#ca8a04',
+  '#16a34a',
+  '#0f766e'
 ]
 
-export function getExpansionColor(relationshipId: string): string {
-  let hash = 0
-  for (let i = 0; i < relationshipId.length; i++) {
-    hash = ((hash << 5) - hash) + relationshipId.charCodeAt(i)
-    hash = hash & hash
-  }
-  return EXPANSION_COLORS[Math.abs(hash) % EXPANSION_COLORS.length]
+function normalizeColor(color?: string): string | undefined {
+  if (!color) return undefined
+  return EXPANSION_COLORS.includes(color) ? color : undefined
+}
+
+function pickRandomColor(colors: string[]): string {
+  return colors[Math.floor(Math.random() * colors.length)]
+}
+
+export function getExpansionColor(usedColors: string[] = []): string {
+  const normalizedUsedColors = usedColors
+    .map((color) => normalizeColor(color))
+    .filter((color): color is string => Boolean(color))
+  const usedColorSet = new Set(normalizedUsedColors)
+  const availableColors = EXPANSION_COLORS.filter((color) => !usedColorSet.has(color))
+  return pickRandomColor(availableColors.length > 0 ? availableColors : EXPANSION_COLORS)
 }

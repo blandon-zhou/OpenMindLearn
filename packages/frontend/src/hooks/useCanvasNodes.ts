@@ -291,10 +291,17 @@ export function useCanvasNodes(
     const currentEdges = getEdges()
     const allNodes: Node[] = buildNodeSnapshots(currentNodes, currentEdges)
 
-    const newNodeId = `node-${Date.now()}`
-    const relationshipId = `${parentId}-${Date.now()}`
-    const expansionColor = getExpansionColor(relationshipId)
     const parentNode = currentNodes.find((n) => n.id === parentId)
+    const siblingColors = currentEdges
+      .filter((edge) => edge.source === parentId)
+      .map((edge) => currentNodes.find((node) => node.id === edge.target)?.data?.expansionColor)
+      .filter((color): color is string => typeof color === 'string' && color.length > 0)
+    const localUsedColors = [
+      typeof parentNode?.data?.expansionColor === 'string' ? parentNode.data.expansionColor : undefined,
+      ...siblingColors
+    ].filter((color): color is string => typeof color === 'string' && color.length > 0)
+    const expansionColor = getExpansionColor(localUsedColors)
+    const newNodeId = `node-${Date.now()}`
     const parentImages: NodeImage[] = (parentNode?.data?.images as NodeImage[]) || []
     const now = new Date().toISOString()
 
