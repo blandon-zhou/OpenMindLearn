@@ -80,7 +80,7 @@ API_STYLE=openai_chat
 
 访问：
 
-- 前端：<http://localhost:5173>
+- 前端：<http://localhost:5174>
 - 后端：<http://127.0.0.1:15174>
 
 ## 构建

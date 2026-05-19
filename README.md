@@ -80,7 +80,7 @@ API_STYLE=openai_chat
 
 Open:
 
-- Frontend: <http://localhost:5173>
+- Frontend: <http://localhost:5174>
 - Backend: <http://127.0.0.1:15174>
 
 ## Build

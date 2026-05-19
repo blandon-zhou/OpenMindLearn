@@ -19,7 +19,7 @@ Product and engineering docs are in `docs/`.
 
 ## Build, Test, and Development Commands
 - `pnpm install`: install workspace dependencies.
-- `pnpm dev`: run frontend (`:5173`) and backend (`:15174`) in parallel.
+- `pnpm dev`: run frontend (`:5174`) and backend (`:15174`) in parallel.
 - `pnpm build`: build all packages.
 - `pnpm -C packages/frontend build`: type-check + production build frontend.
 - `pnpm -C packages/backend build`: compile backend to `dist/`.

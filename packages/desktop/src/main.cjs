@@ -6,7 +6,7 @@ const fs = require('fs')
 
 const isDev = process.env.OML_DESKTOP_DEV === '1'
 const useExternalBackend = process.env.OML_EXTERNAL_BACKEND === '1'
-const frontendDevUrl = process.env.OML_DESKTOP_FRONTEND_URL || 'http://localhost:5173'
+const frontendDevUrl = process.env.OML_DESKTOP_FRONTEND_URL || 'http://localhost:5174'
 const preferredBackendPort = Number(process.env.OML_BACKEND_PORT || 15174)
 
 let backendProcess = null
